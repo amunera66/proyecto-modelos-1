@@ -1,0 +1,26 @@
+# Proyecto Modelos 1 - dependencias
+# Windows 11 ARM64 (Snapdragon X Plus) / Python 3.12 ARM64 nativo
+# Todas estas librerias tienen wheel precompilado win_arm64 para cp312:
+# no debe compilarse nada desde codigo fuente.
+
+# --- datos y calculo numerico ---
+pandas
+numpy
+
+# --- machine learning ---
+scikit-learn
+joblib
+
+# --- visualizacion ---
+matplotlib
+seaborn
+
+# --- notebooks ---
+jupyter
+ipykernel
+
+# --- testing ---
+pytest
+
+# --- datasets ---
+kaggle

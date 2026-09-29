@@ -1,0 +1,10 @@
+# Finales de linea LF en el repositorio y en la copia de trabajo, en cualquier
+# sistema operativo. Evita diferencias CRLF/LF entre integrantes y permite que
+# los parches (git diff / git apply) se apliquen igual en Windows, Linux y macOS.
+* text=auto eol=lf
+
+# Binarios: nunca se convierten ni se muestran como texto en un diff
+*.png binary
+*.jpg binary
+*.joblib binary
+*.pkl binary
