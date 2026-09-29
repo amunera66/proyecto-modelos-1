@@ -1,6 +1,6 @@
 # Proyecto Modelos 1: predicción de la calificación de películas
 
-Proyecto integrador del curso Modelos y Simulación de Sistemas I (Universidad de Antioquia, Ingeniería de Sistemas, profesor Raúl Ramos). El proyecto lleva un modelo de Machine Learning desde un notebook hasta un prototipo desplegable, en cuatro fases acumulativas: modelo predictivo, scripts y Docker, API REST y monitoreo básico.
+Proyecto integrador del curso Modelos y Simulación de Sistemas I (Universidad de Antioquia, Ingeniería de Sistemas, profesor Andrés Felipe Parra). El proyecto lleva un modelo de Machine Learning desde un notebook hasta un prototipo desplegable, en cuatro fases acumulativas: modelo predictivo, scripts y Docker, API REST y monitoreo básico.
 
 ## Equipo
 
