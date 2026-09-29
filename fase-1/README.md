@@ -39,6 +39,40 @@ El dataset limpio tiene 45.430 películas.
 - `original_language` tiene 89 idiomas, con el inglés en el 71 % de las películas.
 - Solo el 9,9 % de las películas pertenece a una colección (`belongs_to_collection`).
 
+## Población del modelo
+
+El modelo se entrena y evalúa con 21.656 películas, tras dos filtros de filas con umbrales fijos:
+
+- `status == "Released"`: se descartan 445 películas no estrenadas, porque la calificación de los usuarios se forma después del estreno.
+- `vote_count > 10`: se descartan 23.329 películas estrenadas con 10 votos o menos. Las películas con 0 votos tienen `vote_average = 0` sin que nadie las haya calificado, y con pocos votos el promedio es muy ruidoso.
+
+`vote_count` se usa solo para filtrar filas, como criterio de confiabilidad de la variable objetivo, y nunca como predictora. En consecuencia, el modelo aplica a películas estrenadas con un mínimo de votos; para películas con muy pocos votos sus predicciones no están validadas.
+
+## Preparación de variables
+
+| Predictora | Tipo | Origen y transformación |
+|---|---|---|
+| `budget` | numérica | 0 se convierte en `NaN` (presupuesto no reportado) |
+| `runtime` | numérica | 0 se convierte en `NaN` (duración no reportada) |
+| `release_year` | numérica | año de `release_date` |
+| `es_franquicia` | binaria | 1 si `belongs_to_collection` tiene valor |
+| `genero_principal` | categórica | primer género de la lista de `genres` (parseada con `ast.literal_eval`); `sin_genero` si está vacía |
+| `original_language` | categórica | sin cambios; los idiomas poco frecuentes se agrupan dentro del Pipeline |
+
+El género principal es un supuesto del equipo: TMDB no garantiza que el primer género de la lista sea el principal de la película.
+
+Sobre el requisito de faltantes de la guía (entre 0,1 % y 2 % en alguna predictora): se cumple en el dataset original, donde `runtime` tiene 0,57 % de nulos reales. En las predictoras finales `runtime` tiene 0,96 % de faltantes, porque los valores 0 se convirtieron a `NaN` y el filtro cambió el total de películas. `budget` queda con 65,6 % de faltantes por la misma conversión.
+
+## Fuga de información
+
+El equipo aplicó tres medidas para evitar que el modelo use información que no estaría disponible al momento de predecir:
+
+1. Exclusión de columnas: `vote_count`, `popularity` y `revenue` no se usan como predictoras, porque se generan después del estreno, en la misma ventana de tiempo en que se acumula la calificación. El notebook verifica con una aserción que ninguna quede entre las predictoras.
+2. Split antes del preprocesamiento: los datos se dividen en train (80 %, 17.324 películas) y test (20 %, 4.332 películas) con semilla fija antes de imputar, escalar o codificar. Antes del split solo se hacen transformaciones fila por fila que no calculan estadísticas sobre el conjunto (convertir 0 en `NaN`, extraer el año, tomar el primer género, filtrar con umbrales fijos).
+3. Preprocesamiento dentro de un Pipeline de scikit-learn: un `ColumnTransformer` imputa las numéricas con la mediana (con indicador de faltante) y las escala, e imputa y codifica las categóricas con `OneHotEncoder(min_frequency=0.01, handle_unknown="infrequent_if_exist")`. Las medianas, medias, desviaciones y la lista de idiomas y géneros frecuentes se aprenden solo con train y luego se aplican a test. Así, la agrupación de idiomas poco frecuentes no usa información de test, y una categoría nueva en test cae en el grupo "infrecuente" sin error.
+
+Además, eliminar las películas duplicadas en la limpieza evita que una misma película quede a la vez en train y en test.
+
 ## Resultados
 
 Pendiente: se completa cuando el notebook incluya el entrenamiento y la evaluación del modelo.
