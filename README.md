@@ -75,7 +75,7 @@ Nota para Windows 11: si Smart App Control está activado, puede bloquear las DL
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 1 | Modelo predictivo (`fase-1/`) | En desarrollo |
+| 1 | Modelo predictivo ([`fase-1/`](fase-1/README.md)) | En desarrollo |
 | 2 | Scripts y Docker | Pendiente |
 | 3 | API REST | Pendiente |
 | 4 | Monitoreo básico | Pendiente |
