@@ -71,11 +71,15 @@ Nota para Windows 11: si Smart App Control está activado, puede bloquear las DL
 - `develop`: rama de integración.
 - `feature/*`: una rama por bloque de trabajo; cada una se integra a `develop` mediante un Pull Request.
 
+## Resultados de la Fase 1
+
+El modelo seleccionado es un Pipeline de scikit-learn con HistGradientBoostingRegressor, entrenado con 17.324 películas estrenadas con más de 10 votos. En test (4.332 películas) obtiene MAE 0,606, RMSE 0,781 y R² 0,374, frente a MAE 0,782, RMSE 0,988 y R² 0,000 del baseline que predice la media. El detalle de la limpieza, la prevención de fuga de información, la evaluación y las limitaciones está en el [README de la Fase 1](fase-1/README.md).
+
 ## Fases
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 1 | Modelo predictivo ([`fase-1/`](fase-1/README.md)) | En desarrollo |
+| 1 | Modelo predictivo ([`fase-1/`](fase-1/README.md)) | Completa |
 | 2 | Scripts y Docker | Pendiente |
 | 3 | API REST | Pendiente |
 | 4 | Monitoreo básico | Pendiente |
