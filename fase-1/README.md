@@ -5,7 +5,8 @@ Esta fase construye un modelo de regresión que predice `vote_average` (califica
 ## Contenido de la carpeta
 
 - `fase1_modelo_predictivo.ipynb`: notebook con la carga, limpieza, análisis exploratorio, preparación de variables, entrenamiento, evaluación y guardado del modelo.
-- `models/`: pipeline entrenado guardado con joblib.
+- `models/modelo_vote_average.joblib`: Pipeline completo entrenado (preprocesamiento y modelo), guardado con joblib (unos 370 KB).
+- `models/modelo_vote_average.json`: metadatos del modelo: predictoras, población, columnas excluidas, división de datos, métricas en test y versiones de las librerías.
 
 ## Cómo ejecutar el notebook
 
@@ -73,6 +74,50 @@ El equipo aplicó tres medidas para evitar que el modelo use información que no
 
 Además, eliminar las películas duplicadas en la limpieza evita que una misma película quede a la vez en train y en test.
 
+## Modelos y selección
+
+Se compararon tres modelos, cada uno como un Pipeline completo con el mismo preprocesamiento: un baseline (`DummyRegressor`, que predice siempre la media de train), `Ridge` y `HistGradientBoostingRegressor`, con hiperparámetros por defecto y semilla fija (sin búsqueda de hiperparámetros). El modelo se eligió por menor RMSE en validación cruzada de 5 particiones sobre train, sin usar test para decidir.
+
+| Modelo | MAE (CV) | RMSE (CV) | R² (CV) |
+|---|---|---|---|
+| Baseline (media) | 0,777 | 0,987 | 0,000 |
+| Ridge | 0,663 | 0,859 | 0,241 |
+| HistGradientBoosting | 0,617 | 0,799 | 0,344 |
+
 ## Resultados
 
-Pendiente: se completa cuando el notebook incluya el entrenamiento y la evaluación del modelo.
+Métricas en test (4.332 películas que no se usaron en ninguna decisión):
+
+| Modelo | MAE | RMSE | R² |
+|---|---|---|---|
+| Baseline (media) | 0,782 | 0,988 | 0,000 |
+| Ridge | 0,658 | 0,850 | 0,260 |
+| HistGradientBoosting (seleccionado) | 0,606 | 0,781 | 0,374 |
+
+- El modelo seleccionado reduce el MAE en un 22,5 % y el RMSE en un 20,9 % frente al baseline. En promedio se equivoca 0,6 puntos en una escala de 0 a 10; el 81,4 % de las películas de test tiene un error menor a 1 punto.
+- Las métricas de test son coherentes con las de validación cruzada, así que no hay señales de sobreajuste.
+- Según la importancia por permutación, las predictoras más útiles son `runtime`, `genero_principal` y `release_year`, seguidas de `original_language`; `budget` y `es_franquicia` aportan poco.
+
+## Limitaciones
+
+- Con R² de 0,374, las predictoras disponibles antes del estreno explican alrededor de un tercio de la variación de la calificación. Las predicciones se concentran cerca de la media (de 4,4 a 7,8, frente a calificaciones reales de 2,2 a 8,8): el modelo sobreestima las películas peor calificadas y subestima las mejor calificadas.
+- Solo aplica a películas estrenadas con más de 10 votos en TMDB.
+- El género principal es un supuesto (primer género de la lista de TMDB).
+- `budget` falta en el 65,6 % de las películas y se imputa con la mediana de train.
+- El modelo guardado se entrenó solo con train, para que las métricas reportadas correspondan exactamente al archivo guardado.
+
+## Cómo usar el modelo guardado
+
+```python
+import joblib
+import pandas as pd
+
+modelo = joblib.load("fase-1/models/modelo_vote_average.joblib")
+peliculas = pd.DataFrame([{
+    "budget": 150_000_000, "runtime": 130, "release_year": 2016, "es_franquicia": 1,
+    "genero_principal": "Action", "original_language": "en",
+}])
+print(modelo.predict(peliculas))
+```
+
+El Pipeline recibe las 6 predictoras en su forma original: los valores desconocidos se pasan como `NaN` (por ejemplo, `budget` no reportado) y los idiomas o géneros poco frecuentes o no vistos se asignan al grupo "infrecuente" sin error. Para cargarlo se recomienda usar las mismas versiones de scikit-learn y joblib indicadas en el archivo JSON.
