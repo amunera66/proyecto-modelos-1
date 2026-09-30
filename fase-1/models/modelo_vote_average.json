@@ -1,0 +1,51 @@
+{
+  "modelo": "HistGradientBoosting",
+  "objetivo": "vote_average",
+  "predictoras": {
+    "numericas": [
+      "budget",
+      "runtime",
+      "release_year"
+    ],
+    "binarias": [
+      "es_franquicia"
+    ],
+    "categoricas": [
+      "genero_principal",
+      "original_language"
+    ]
+  },
+  "poblacion": {
+    "status": "Released",
+    "vote_count_minimo_exclusivo": 10,
+    "nota": "vote_count se usa solo para filtrar filas, no es predictora"
+  },
+  "columnas_excluidas_por_fuga": [
+    "vote_count",
+    "popularity",
+    "revenue"
+  ],
+  "division": {
+    "test_size": 0.2,
+    "random_state": 42,
+    "n_train": 17324,
+    "n_test": 4332
+  },
+  "metricas_test": {
+    "MAE": 0.6059,
+    "RMSE": 0.7813,
+    "R2": 0.3745
+  },
+  "metricas_test_baseline": {
+    "MAE": 0.7823,
+    "RMSE": 0.988,
+    "R2": -0.0004
+  },
+  "versiones": {
+    "python": "3.12.10",
+    "scikit-learn": "1.9.1",
+    "pandas": "3.0.6",
+    "numpy": "2.5.3",
+    "joblib": "1.6.0"
+  }
+}
