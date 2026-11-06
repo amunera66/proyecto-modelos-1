@@ -39,6 +39,10 @@ data/external/
 !data/**/README.md
 # Carpeta local con el paquete completo de Kaggle (7 CSV, ~940 MB)
 dataset/
+# Fase 2: el CSV completo no se sube; solo el CSV de ejemplo de prediccion
+fase-2/data/*.csv
+fase-2/data/*.zip
+!fase-2/data/ejemplo_prediccion.csv
 
 # ===== Modelos entrenados / artefactos =====
 *.pkl
@@ -50,6 +54,13 @@ artifacts/
 # Excepcion: el modelo de la Fase 1 es un entregable y si se versiona
 !fase-1/models/
 !fase-1/models/*.joblib
+# Excepcion: las versiones de modelos de la Fase 2 tambien se versionan
+!fase-2/models/
+!fase-2/models/**
+
+# ===== Salidas de la aplicacion (Fase 2) =====
+fase-2/outputs/*
+!fase-2/outputs/.gitkeep
 
 # ===== Credenciales =====
 # La API key de Kaggle NUNCA se sube
