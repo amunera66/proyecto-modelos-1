@@ -6,6 +6,8 @@ from dataclasses import dataclass
 SEED = 42
 TEST_SIZE = 0.2
 MIN_VOTES = 10
+CV_FOLDS = 5
+SPLIT_STRATEGY = "group"
 
 # --- Dataset ---
 DATASET_SOURCE = "The Movies Dataset (Rounak Banik), Kaggle"
@@ -48,16 +50,40 @@ class Feature:
     valid_values: tuple | None = None
 
 
-FEATURES = (
-    Feature("budget", "numerica", nullable=True),
-    Feature("runtime", "numerica", nullable=True),
-    Feature("release_year", "numerica", nullable=True),
-    Feature("es_franquicia", "binaria", nullable=False, valid_values=(0, 1)),
-    Feature("genero_principal", "categorica", nullable=True),
-    Feature("original_language", "categorica", nullable=True),
-)
+# --- Sexta predictora ---
+# Cambiar SIXTH_FEATURE solo cambia lo que se entrene despues: cada Pipeline
+# guarda su propia opcion, asi que las versiones ya guardadas no se afectan.
+SIXTH_FEATURE_OPTIONS = ("es_franquicia", "es_secuela")
+SIXTH_FEATURE = "es_secuela"
+# Solo la usan los modelos guardados sin su opcion (los del Paso 1), que siempre
+# se entrenaron con esta variable. No debe cambiar aunque cambie SIXTH_FEATURE.
+LEGACY_SIXTH_FEATURE = "es_franquicia"
 
-FEATURE_NAMES = tuple(feature.name for feature in FEATURES)
+
+def get_features(sixth_feature: str = SIXTH_FEATURE) -> tuple[Feature, ...]:
+    """Devuelve las 6 predictoras, en el orden del contrato."""
+    if sixth_feature not in SIXTH_FEATURE_OPTIONS:
+        raise ValueError(
+            f"Sexta predictora invalida: {sixth_feature!r}. "
+            f"Opciones: {', '.join(SIXTH_FEATURE_OPTIONS)}"
+        )
+    return (
+        Feature("budget", "numerica", nullable=True),
+        Feature("runtime", "numerica", nullable=True),
+        Feature("release_year", "numerica", nullable=True),
+        Feature(sixth_feature, "binaria", nullable=False, valid_values=(0, 1)),
+        Feature("genero_principal", "categorica", nullable=True),
+        Feature("original_language", "categorica", nullable=True),
+    )
+
+
+def get_feature_names(sixth_feature: str = SIXTH_FEATURE) -> tuple[str, ...]:
+    """Devuelve los nombres de las 6 predictoras, en el orden del contrato."""
+    return tuple(feature.name for feature in get_features(sixth_feature))
+
+
+FEATURES = get_features()
+FEATURE_NAMES = get_feature_names()
 NUMERIC_FEATURES = tuple(f.name for f in FEATURES if f.kind == "numerica")
 BINARY_FEATURES = tuple(f.name for f in FEATURES if f.kind == "binaria")
 CATEGORICAL_FEATURES = tuple(f.name for f in FEATURES if f.kind == "categorica")
@@ -73,7 +99,7 @@ TARGET_HORIZON = "no verificado"
 REQUIREMENTS_FILE = "requirements.txt"
 
 
-def input_contract() -> list[dict]:
+def input_contract(sixth_feature: str = SIXTH_FEATURE) -> list[dict]:
     """Devuelve el contrato de entrada en un formato que se puede guardar en JSON."""
     return [
         {
@@ -84,5 +110,5 @@ def input_contract() -> list[dict]:
                 None if feature.valid_values is None else list(feature.valid_values)
             ),
         }
-        for feature in FEATURES
+        for feature in get_features(sixth_feature)
     ]

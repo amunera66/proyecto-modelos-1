@@ -94,13 +94,14 @@ def build_metadata(
     partition debe traer: estrategia, test_size, n_train y n_test.
     """
     model = pipeline.named_steps["modelo"]
+    sixth_feature = pipeline.named_steps["ceros_a_nan"].kw_args["sixth_feature"]
     return {
         "version": version,
         "fecha": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "tipo_problema": config.PROBLEM_TYPE,
         "objetivo": target,
         "algoritmo": type(model).__name__,
-        "contrato_entrada": config.input_contract(),
+        "contrato_entrada": config.input_contract(sixth_feature),
         "hiperparametros": model.get_params(),
         "semilla": seed,
         "datos": data_info,
