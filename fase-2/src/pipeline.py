@@ -45,7 +45,7 @@ def _build_encoder() -> OneHotEncoder:
     )
 
 
-def _build_preprocessor() -> ColumnTransformer:
+def _build_preprocessor(sixth_feature: str) -> ColumnTransformer:
     numeric = Pipeline(steps=[
         ("imputar", SimpleImputer(strategy="median", add_indicator=True)),
         ("escalar", StandardScaler()),
@@ -60,25 +60,35 @@ def _build_preprocessor() -> ColumnTransformer:
     ])
     return ColumnTransformer(transformers=[
         ("numericas", numeric, list(config.NUMERIC_FEATURES)),
-        ("binarias", "passthrough", list(config.BINARY_FEATURES)),
+        ("binarias", "passthrough", [sixth_feature]),
         ("genero", genre, ["genero_principal"]),
         ("idioma", language, ["original_language"]),
     ])
 
 
-def _build(regressor: RegressorMixin) -> Pipeline:
+def _build(regressor: RegressorMixin, sixth_feature: str) -> Pipeline:
+    config.get_features(sixth_feature)  # rechaza una opcion invalida al construir
+    first_step = FunctionTransformer(
+        prepare_model_input,
+        feature_names_out="one-to-one",
+        kw_args={"sixth_feature": sixth_feature},
+    )
     return Pipeline(steps=[
-        ("ceros_a_nan", FunctionTransformer(prepare_model_input, feature_names_out="one-to-one")),
-        ("preprocesamiento", _build_preprocessor()),
+        ("ceros_a_nan", first_step),
+        ("preprocesamiento", _build_preprocessor(sixth_feature)),
         ("modelo", regressor),
     ])
 
 
-def build_pipeline(seed: int = config.SEED) -> Pipeline:
+def build_pipeline(
+    seed: int = config.SEED, sixth_feature: str = config.SIXTH_FEATURE
+) -> Pipeline:
     """Devuelve el Pipeline completo, sin ajustar, con HistGradientBoosting."""
-    return _build(HistGradientBoostingRegressor(random_state=seed, **HGB_PARAMS))
+    return _build(
+        HistGradientBoostingRegressor(random_state=seed, **HGB_PARAMS), sixth_feature
+    )
 
 
-def build_baseline() -> Pipeline:
+def build_baseline(sixth_feature: str = config.SIXTH_FEATURE) -> Pipeline:
     """Devuelve el baseline: el mismo preprocesamiento y DummyRegressor (media)."""
-    return _build(DummyRegressor(strategy="mean"))
+    return _build(DummyRegressor(strategy="mean"), sixth_feature)
