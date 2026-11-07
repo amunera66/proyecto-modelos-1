@@ -77,7 +77,7 @@ def cross_validate_model(
     seed: int = config.SEED,
     target: str = config.TARGET,
 ) -> dict[str, float]:
-    """Hace CV solo con train y devuelve MAE, RMSE, su desviacion y R2."""
+    """Hace CV solo con train y devuelve la media y la desviacion de cada metrica."""
     result = cross_validate(
         estimator,
         train_df[list(feature_names)],
@@ -92,7 +92,9 @@ def cross_validate_model(
     )
     return {
         "MAE": float(-np.mean(result["test_MAE"])),
+        "MAE_desv": float(np.std(result["test_MAE"])),
         "RMSE": float(-np.mean(result["test_RMSE"])),
         "RMSE_desv": float(np.std(result["test_RMSE"])),
         "R2": float(np.mean(result["test_R2"])),
+        "R2_desv": float(np.std(result["test_R2"])),
     }

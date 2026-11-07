@@ -95,7 +95,11 @@ MIN_CATEGORY_FREQUENCY = 0.01
 # --- Metadatos ---
 PROBLEM_TYPE = "regresion"
 PRIMARY_METRIC = "RMSE"
-TARGET_HORIZON = "no verificado"
+TARGET_HORIZON = (
+    "no verificada: vote_average es el promedio acumulado hasta una fecha de descarga "
+    "desconocida; el dataset cubre estrenos hasta julio de 2017, segun replicas de su "
+    "descripcion (ver docs/decisiones.md)"
+)
 REQUIREMENTS_FILE = "requirements.txt"
 
 
