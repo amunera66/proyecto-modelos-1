@@ -658,6 +658,125 @@ La primera ejecución debe mostrar RMSE de 0,7946 en CV y 0,8007 en prueba. La s
 
 ## Paso 4 – Predicción
 
+`predict.py` solo parsea argumentos y orquesta; la lógica está en `src/predicting.py`. Toma las columnas del `metadata.json` del modelo, así que también funciona con modelos antiguos entrenados con `es_franquicia`. Nunca entrena ni reajusta transformaciones.
+
+### Uso de predict.py
+
+Los comandos se ejecutan desde `fase-2/`. `--model` acepta la carpeta de la versión o la ruta a su `modelo.joblib`.
+
+PowerShell:
+
+```powershell
+python predict.py --help
+python predict.py --model models\v1 --input data\ejemplo_prediccion.csv --output outputs\predicciones_v1.csv
+```
+
+Bash:
+
+```bash
+python predict.py --help
+python predict.py --model models/v1 --input data/ejemplo_prediccion.csv --output outputs/predicciones_v1.csv
+```
+
+### Esquema del CSV de entrada
+
+El CSV lleva las 6 predictoras ya derivadas, sin la variable objetivo y en cualquier orden. Debe estar en UTF-8. Esta tabla corresponde a `v1` y `v2`.
+
+| Columna | Tipo | Admite nulos | Ejemplo |
+|---|---|---|---|
+| `budget` | numérica | Sí | `165000000` |
+| `runtime` | numérica | Sí | `155` |
+| `release_year` | numérica | Sí | `2021` |
+| `es_secuela` | binaria: 0 o 1 | No | `0` |
+| `genero_principal` | categórica | Sí | `Science Fiction` |
+| `original_language` | categórica | Sí | `en` |
+
+Opcionalmente puede traer `id` o `title`, que se copian a la salida. `data/ejemplo_prediccion.csv` tiene 12 filas de ejemplo con valores ilustrativos, no datos verificados de esas películas. Incluye `runtime` nulo, `budget` nulo, `budget` y `runtime` en 0, e idioma y género poco frecuentes.
+
+La salida trae el identificador si venía, las 6 predictoras tal como se escribieron y la columna `prediccion`, con una fila por cada fila de entrada, en el mismo orden.
+
+### Manejo de la entrada
+
+| Caso | Comportamiento |
+|---|---|
+| Columna del contrato ausente | Error que nombra las columnas faltantes |
+| Celda nula donde el contrato lo permite | Se acepta y la resuelve el imputador guardado |
+| Sexta predictora nula o distinta de 0 y 1 | Error con la columna y unas filas de ejemplo. El Pipeline no lo valida, por eso se hace aquí |
+| Texto que no se puede convertir en una numérica | Error con la columna y unas filas de ejemplo. También rechaza `inf` |
+| Números escritos como texto | Se convierten |
+| `budget` o `runtime` en 0 | Se tratan como faltantes dentro del Pipeline: 0 y nulo dan la misma predicción. La salida conserva el 0 |
+| `genero_principal` nulo | Se imputa como `sin_genero` |
+| `original_language` nulo | Se imputa con la moda de train, `en` |
+| Columnas en otro orden | Se reordenan según el contrato |
+| Columnas adicionales | Se ignoran con un aviso en stderr, salvo `id` y `title` |
+| `--output` ya existe | Se reemplaza si la predicción sale bien; si hay un error, queda intacto |
+
+Son nulas las celdas vacías y los textos `NA`, `N/A`, `NaN`, `nan`, `NULL`, `null`, `None` y `<NA>`.
+
+Los errores previsibles van a stderr, sin traceback, con código de salida 1, y no crean el archivo de salida: se escribe en un temporal que se renombra al final. Si faltan argumentos, el código es 2.
+
+**Categorías nuevas: comportamiento comprobado en `v1` y `v2`.** Con `handle_unknown="infrequent_if_exist"`, una categoría que el modelo no vio se asigna a la columna `infrequent_sklearn`, sin error y sin aviso. Predice exactamente igual que una categoría conocida pero poco frecuente.
+
+- En `genero_principal`, un género nuevo predice igual que `TV Movie` o `sin_genero`.
+- En `original_language`, un idioma nuevo predice igual que `nb`.
+- Las categorías distinguen mayúsculas de minúsculas. `EN` no es `en`: cuenta como desconocido y cambia la predicción sin avisar. En un caso de prueba dio 6,62 en vez de 6,44. Los errores de escritura en estas columnas no se detectan.
+- La lista de categorías poco frecuentes depende de la versión: tiene 49 idiomas en `v1` y 53 en `v2`.
+
+### Versiones v1 y v2
+
+Las dos usan el mismo CSV, el commit `878d57a`, `es_secuela`, partición por grupos y los mismos hiperparámetros. **La única diferencia es la semilla, que solo cambia qué películas quedan en entrenamiento y en prueba:** sin parada temprana, la semilla no cambia el modelo si los datos son los mismos.
+
+| Versión | Comando | Filas train / prueba | CV: MAE / RMSE / R² | Prueba: MAE / RMSE / R² | Baseline en prueba: RMSE |
+|---|---|---|---|---|---|
+| `v1` | defaults (semilla 42) | 17.335 / 4.321 | 0,6150 / 0,7946 / 0,3490 | 0,6199 / 0,8007 / 0,3491 | 0,9930 |
+| `v2` | `--seed 7` | 17.318 / 4.338 | 0,6152 / 0,7948 / 0,3460 | 0,6119 / 0,7986 / 0,3631 | 1,0007 |
+
+- El mejor resultado de `v2` en prueba no la hace mejor: se evaluó con otras películas, y en CV las dos rinden casi igual.
+- Sobre `data/ejemplo_prediccion.csv`, sus predicciones difieren hasta en 0,34 puntos. Es una medida de cuánto depende una predicción de la partición.
+- Entrenar `v2` no modificó `v1`: se compararon hashes y fechas de sus tres archivos.
+- Cada versión pesa cerca de 380 KB, por debajo del límite de 50 MB, así que se suben al repositorio. `.gitignore` las permite.
+
+### Para el siguiente relevo
+
+**Qué quedó listo**
+
+- `predict.py` y `src/predicting.py`.
+- `data/ejemplo_prediccion.csv`.
+- `models/v1` y `models/v2`, entrenadas con el commit `878d57a`.
+
+**Cómo verificarlo**
+
+Desde `fase-2/`. La primera predicción debe guardar 12 filas. La segunda debe fallar con código 1 y no crear `outputs/mal.csv`. El archivo `data/no_existe.csv` no existe a propósito.
+
+PowerShell:
+
+```powershell
+python predict.py --model models\v1 --input data\ejemplo_prediccion.csv --output outputs\predicciones_v1.csv
+python predict.py --model models\v1 --input data\no_existe.csv --output outputs\mal.csv
+$LASTEXITCODE
+Test-Path outputs\mal.csv
+```
+
+Bash:
+
+```bash
+python predict.py --model models/v1 --input data/ejemplo_prediccion.csv --output outputs/predicciones_v1.csv
+python predict.py --model models/v1 --input data/no_existe.csv --output outputs/mal.csv
+echo $?
+ls outputs/mal.csv
+```
+
+**Qué falta, a cargo de Miguel**
+
+- **Paso 5, pruebas con pytest:** deben correr sin el CSV completo. Conviene cubrir entrenamiento y guardado, carga y predicción, nulos y ceros, entrada inválida, orden de columnas, categorías nuevas y que `v2` no modifique `v1`. También, que `add_sequel_feature` se calcule antes de los filtros y que un modelo con `es_franquicia` se siga cargando.
+- **Paso 6, Docker:** debe usar `requirements.txt`, no `requirements-notebook.txt`. Hay que comprobar que `models/v1`, entrenada en Windows ARM64, se carga en Linux y comparar sus predicciones, porque eso no se ha verificado.
+- **Paso 7, README:** debe usar las métricas de `v1` y `v2` de esta sección y la explicación de la diferencia entre ellas.
+
+**A tener en cuenta**
+
+- `git_commit` de `v1` y `v2` apunta a `878d57a`, en la rama del PR #7. Hay que integrar ese PR con un merge normal, como los anteriores: con squash o rebase, ese commit no quedaría en `develop`.
+- Si cambia el código de entrenamiento, `v1` y `v2` no se reentrenan encima: se crea una versión nueva.
+
 ## Paso 5 – Pruebas
 
 ## Paso 6 – Docker

@@ -14,7 +14,7 @@ Las métricas de este documento son del análisis del Paso 2, con `early_stoppin
 | C3. `es_franquicia` | Reemplazada por `es_secuela` | Resuelta |
 | C4. Estabilidad entre CV y prueba | Redacción moderada, con evidencia de 10 semillas | Resuelta |
 | C5. Filtros y horizonte | Filtros explícitos; fecha de corte no verificada | Resuelta con una limitación |
-| C6. Revisión de PR | Sin revisiones registradas en los PR #1 a #5 | Pendiente |
+| C6. Revisión de PR | Los PR #5 y #6 se integraron sin aprobación registrada; se exige desde el PR del Paso 3 | En curso |
 | C7. Contrato y metadatos | Contrato y esquema definidos; faltan las pruebas formales | En curso |
 
 ## C1. EDA
@@ -117,7 +117,7 @@ Por eso, las métricas se deben leer con su variación y no como un valor exacto
 
 ## Notas sobre C6 y C7
 
-**C6. Revisión de PR.** El profesor pidió que otro integrante revise formalmente cada PR antes del merge. Los PR #1 a #5 no tienen ninguna revisión registrada en GitHub, así que esta corrección sigue pendiente. El PR de este paso indica a Juan Esteban González Duque como revisor; la aprobación debe quedar registrada en GitHub antes del merge.
+**C6. Revisión de PR.** El profesor pidió que otro integrante revise formalmente cada PR antes del merge. Los PR #5 y #6 de la Fase 2 se integraron sin aprobación registrada en GitHub, igual que los PR #1 a #4 de la Fase 1. Desde el PR del Paso 3 (#7) el equipo exige aprobación antes del merge. Por ahora es una regla del equipo: `develop` y `main` todavía no tienen una protección de rama que la haga cumplir.
 
 **C7. Contrato y metadatos.** El profesor pidió conservar los metadatos, el contrato de 6 predictoras y las pruebas de carga con datos nuevos.
 
