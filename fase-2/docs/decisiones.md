@@ -779,4 +779,159 @@ ls outputs/mal.csv
 
 ## Paso 5 – Pruebas
 
+Las pruebas están en `tests/`. No usan red ni el CSV completo, y todo lo que generan queda en carpetas temporales de pytest. `models/v1` y `models/v2` solo se leen.
+
+### Cómo ejecutarlas
+
+Desde `fase-2/`, con las dependencias de `requirements.txt`. El comando es igual en las dos terminales. Debe ser `python -m pytest`, no `pytest`, para que `src` se pueda importar.
+
+PowerShell:
+
+```powershell
+python -m pytest -v
+```
+
+Bash:
+
+```bash
+python -m pytest -v
+```
+
+Resultado en Windows ARM64, con Python 3.12.10: **102 pruebas aprobadas en cerca de 11 s**.
+
+### Cómo están armadas
+
+- **`tests/conftest.py`** genera 200 filas con el esquema crudo, con semilla fija. La limpieza deja 198 y los filtros, 183; la partición por grupos deja 145 en entrenamiento y 38 en prueba.
+- **Los datos tienen una señal fuerte a propósito:** `vote_average` depende de cada predictora, y un `budget` o `runtime` faltante tiene un efecto propio. Con un modelo casi constante, pruebas como "0 predice igual que nulo" pasarían sin probar nada. `test_modelo_responde_a_las_predictoras` lo vigila.
+- **Una sola versión compartida:** el fixture `entrenado` entrena una vez con `train_model`. No hubo que reducir hiperparámetros, porque tarda menos de 1 s. `train_model` no devuelve el Pipeline, así que el fixture envuelve `save_version` para predecir con el objeto en memoria justo antes de guardarlo.
+- **Procesos aparte:** cada uno tarda más de 1 s en cargar scikit-learn. Con `subprocess` van solo tres casos: predicción correcta, columna ausente y `train.py` con `--data` inexistente. Los demás llaman a `main()` de cada script y comprueban su código de salida, lo que bajó la suite de 18 s a 11 s.
+
+### Qué verifica cada prueba
+
+Con varios casos, la prueba se repite con cada valor.
+
+| Prueba | Casos | Verifica |
+|---|---|---|
+| **`test_entrenamiento.py`** | | |
+| `test_csv_sintetico_cubre_los_casos_pedidos` | 1 | El CSV tiene 200 filas, solo las columnas crudas y todos los casos pedidos: colecciones, ceros y nulos, pocos votos y otro `status` |
+| `test_csv_sintetico_es_reproducible` | 1 | La semilla fija genera siempre los mismos datos |
+| `test_guarda_los_tres_archivos_y_el_modelo_se_carga` | 1 | Existen solo los 3 archivos, sin temporales, y `load_version` carga la carpeta y la ruta a `modelo.joblib` |
+| `test_metrics_trae_el_modelo_y_el_baseline` | 1 | `metrics.json` sigue el esquema, y el modelo supera al baseline |
+| `test_metadata_cumple_el_esquema_y_el_contrato` | 1 | Claves de `metadata.json`, contrato de 6 predictoras con `es_secuela` binaria sin nulos, datos sin rutas y partición sin grupos compartidos |
+| `test_limpieza_quita_filas_corruptas_y_duplicadas` | 1 | Quita la línea corrupta y el duplicado, y `budget` queda numérico |
+| `test_filtros_de_votos_y_status` | 1 | 10 votos sale, 11 votos queda; salen `Rumored` y `status` nulo |
+| `test_ceros_de_budget_y_runtime_quedan_como_nulos` | 1 | No quedan ceros tras derivar las predictoras |
+| `test_es_secuela_se_calcula_antes_de_los_filtros` | 1 | Una secuela cuya precuela fue filtrada vale 1; calculada después valdría 0 |
+| `test_es_secuela_en_empates_fechas_nulas_y_colecciones_unitarias` | 1 | Casos borde de la definición de `es_secuela` |
+| `test_particion_group_no_comparte_grupos` | 4 | Con cuatro semillas, ningún grupo queda en entrenamiento y prueba a la vez |
+| `test_particion_random_si_comparte_grupos_con_estos_datos` | 1 | Control: estos datos sí pueden dejar sagas en ambos lados |
+| `test_train_por_consola_con_data_inexistente` | 1 | Código distinto de cero, sin traceback, y no crea la carpeta de la versión |
+| `test_train_py_guarda_una_version` | 1 | `train.py` termina con código 0 y la versión se carga |
+| **`test_prediccion.py`** | | |
+| `test_modelo_responde_a_las_predictoras` | 1 | Control: las predicciones varían al cambiar `budget`, `runtime` o `es_secuela` |
+| `test_pipeline_recargado_predice_igual_que_en_memoria` | 1 | Una predicción por fila, igual a la del Pipeline antes de guardar |
+| `test_las_predicciones_siguen_el_orden_de_las_filas` | 1 | Invertir las filas invierte las predicciones |
+| `test_predict_por_consola_genera_el_csv` | 1 | Crea el CSV con `prediccion`, las mismas filas y los mismos valores que en memoria |
+| `test_nulos_en_runtime_y_budget_se_predicen_sin_nan` | 1 | Sin errores y sin `NaN` |
+| `test_todos_los_textos_nulos_equivalen_a_celda_vacia` | 9 | Cada texto de la lista de nulos predice igual que una celda vacía |
+| `test_cero_predice_igual_que_nulo` | 2 | `runtime=0` y nulo dan lo mismo, y también `budget` |
+| `test_cero_predice_igual_que_nulo_directo_en_el_pipeline` | 2 | Lo mismo sin pasar por `predicting.py`: la conversión está dentro del Pipeline |
+| `test_la_salida_conserva_el_cero_escrito` | 1 | La salida muestra el 0 tal como vino |
+| `test_columnas_en_otro_orden_dan_lo_mismo` | 1 | Mismas predicciones con las columnas al revés |
+| `test_columnas_en_otro_orden_directo_en_el_pipeline` | 1 | Intercambiar `budget` y `runtime` no cambia nada, sin la ayuda de `prepare_input` |
+| `test_categoria_no_vista_no_rompe_la_prediccion` | 2 | Género e idioma nuevos se predicen sin error |
+| `test_idioma_no_visto_predice_como_uno_poco_frecuente` | 1 | Comportamiento documentado en el Paso 4 |
+| `test_columnas_extra_se_ignoran_y_title_se_copia` | 1 | Las extras no llegan a la salida ni cambian la predicción; `title` se copia con tildes y comas |
+| `test_predecir_no_modifica_lo_aprendido` | 1 | Medianas, escalas, categorías y árboles siguen iguales tras predecir |
+| `test_predecir_no_modifica_la_version_guardada` | 1 | Los hashes de la versión no cambian |
+| **`test_entrada_invalida.py`** | | |
+| `test_columna_ausente_lanza_la_excepcion_documentada` | 6 | `MissingColumnsError` nombra la columna, para cada predictora, y no crea la salida |
+| `test_columna_ausente_en_el_pipeline_lanza_la_misma_excepcion` | 1 | El Pipeline lanza el mismo error sin pasar por `predicting.py` |
+| `test_columna_ausente_por_consola` | 1 | Código distinto de cero, sin traceback, sin salida ni temporales |
+| `test_es_secuela_invalida_en_predict_py` | 2 | Con 2 o nulo: código distinto de cero, mensaje claro y sin salida |
+| `test_es_secuela_invalida_lanza_error` | 6 | Una sola celda inválida basta, y el mensaje dice la fila |
+| `test_budget_no_numerico_en_predict_py` | 1 | Código distinto de cero; el mensaje nombra la columna y el valor |
+| `test_numerica_invalida_lanza_error` | 12 | Rechaza `abc`, `inf`, `-inf` y `1,5` en las 3 numéricas |
+| `test_un_error_deja_intacta_una_salida_anterior` | 1 | Un error no daña el archivo de salida que ya existía |
+| `test_entrada_sin_filas_lanza_error` | 1 | Un CSV solo con encabezado da un error claro |
+| `test_coma_final_no_desplaza_las_columnas` | 3 | Corrección 1: con coma final en los datos o también en el encabezado, las columnas y las predicciones no cambian |
+| `test_coma_final_en_predict_py_no_muestra_avisos` | 1 | Corrección 1: código 0 y stderr vacío |
+| `test_csv_ilegible_termina_con_mensaje_claro` | 4 | Vacío, comilla sin cerrar, sin UTF-8 o fila posterior larga: mensaje claro, sin traceback ni salida |
+| `test_datos_de_mas_se_rechazan_en_vez_de_perderse` | 1 | Corrección 1: un campo de más con datos es un error que indica la línea |
+| `test_runtime_con_texto_lanza_data_error` | 1 | Corrección 2: `DataError` nombra la columna, la fila y el valor |
+| `test_runtime_con_texto_no_entrena_ni_crea_la_version` | 1 | Corrección 2: el valor no se vuelve nulo y no se crea la versión |
+| `test_runtime_infinito_tambien_se_rechaza` | 1 | Corrección 2: `inf` da el mismo error |
+| `test_mensaje_de_runtime_limita_los_ejemplos` | 1 | Corrección 2: muestra 5 filas e indica cuántas más hay |
+| `test_runtime_con_texto_en_train_py` | 1 | Corrección 2: código distinto de cero, sin traceback y sin versión |
+| `test_runtime_valido_sigue_igual_tras_la_validacion` | 1 | Corrección 2: los nulos y ceros de `runtime` no cambian |
+| **`test_versionamiento.py`** | | |
+| `test_segunda_version_deja_intacta_la_primera` | 1 | Hashes y fechas de la primera no cambian, y las dos se cargan y predicen distinto |
+| `test_repetir_identificador_falla_sin_modificar_archivos` | 1 | `train_model` y `save_version` lanzan `VersionExistsError`; hashes y fechas no cambian |
+| `test_repetir_identificador_en_train_py` | 1 | Código distinto de cero y hashes iguales |
+| `test_identificador_invalido_no_crea_nada` | 5 | Rechaza identificadores como `..` y `../fuera` sin crear nada |
+| `test_modelo_con_es_franquicia_se_carga_y_predice` | 1 | Un modelo con la sexta predictora de la Fase 1 sigue funcionando |
+| `test_modelo_con_es_franquicia_exige_su_columna` | 1 | El contrato viaja con la versión, no con `SIXTH_FEATURE` |
+| `test_modelo_del_paso_1_sin_kw_args_sigue_prediciendo` | 1 | Un modelo guardado sin `kw_args` predice igual, por `LEGACY_SIXTH_FEATURE` |
+| `test_versiones_del_repositorio_predicen_el_ejemplo` | 1 | `v1` y `v2` predicen las 12 filas de `data/ejemplo_prediccion.csv` entre 0 y 10, y sus hashes no cambian |
+
+### Comprobación de que las pruebas detectan errores
+
+En una copia temporal de `fase-2/`, se metió un defecto a la vez en `src/`, `train.py` y `predict.py`, y se corrió la suite. Algunos ejemplos: quitar la conversión de ceros, no reordenar columnas, calcular `es_secuela` después de los filtros, ignorar los grupos, reajustar al predecir y terminar con código 0 tras un error.
+
+La suite detectó 20 de 21 defectos. El restante quitaba solo una de las comprobaciones de `save_version`, y la siguiente sigue protegiendo la versión. Con una variante que sí sobrescribe, fallan 2 pruebas. Esa copia también confirma que la suite corre sin `movies_metadata.csv`.
+
+Las 15 pruebas de las correcciones se escribieron aparte. Con el código anterior fallan las 9 que reproducen los errores; las otras 6 protegen casos que ya funcionaban.
+
+### Correcciones al código de los pasos 1 y 4
+
+Las pruebas encontraron dos errores en código ya entregado: `src/data.py` es del Paso 1 y `src/predicting.py`, del Paso 4. Los dos terminaban con traceback, aunque los pasos 3 y 4 documentan que los errores previsibles no lo muestran. Se corrigieron solo esos dos archivos, con autorización expresa. No cambian `train.py`, `predict.py`, `models/v1` ni `models/v2`.
+
+| # | Archivo | Antes | Ahora | Por qué |
+|---|---|---|---|---|
+| 1 | `src/predicting.py`, `read_input` | Con una coma final, pandas usaba la primera columna como índice y desplazaba las demás. Al armar el mensaje salía `TypeError: can only concatenate str (not "int") to str` | Lee con `index_col=False`, acepta campos sobrantes vacíos y rechaza los que traen datos, indicando la línea. Cualquier fallo de lectura da `PredictionError` | La coma final es común en CSV exportados y no cambia el contenido |
+| 2 | `src/data.py`, `clean_data` | Solo `budget` se validaba. La CV fallaba con `ValueError: Cannot use median strategy with non-numeric data` | `runtime` se convierte a número. Un texto o `inf` lanza `DataError`, que nombra la columna y hasta 5 filas | Convertirlos a nulos ocultaría un dato malo: el imputador lo trataría como faltante |
+
+**Sobre `index_col=False`:** por sí solo no bastaba. Con `A,1,2,x` y un encabezado de tres columnas, pandas descarta la `x` y solo emite un `ParserWarning`. Con un género sin comillas, como `Action,Adventure`, el idioma se perdería sin error. Por eso `_reject_extra_fields` revisa lo que sobra. Si solo una fila posterior trae la coma final, pandas falla con `Expected 7 fields`, y ese caso termina en un error claro.
+
+**Alcance:** `read_raw_csv` no cambió, y `budget` conserva su conversión con `errors="raise"`. La tabla "Manejo de la entrada" del Paso 4 no menciona estos casos; el comportamiento nuevo está aquí.
+
+**Evidencia de que no cambió nada de lo existente**
+
+| Comprobación | Resultado |
+|---|---|
+| Suite completa | 102 pruebas aprobadas |
+| `v-check`, entrenada con el CSV real (SHA-256 de referencia) y borrada después | CV RMSE 0,7946 y prueba RMSE 0,8007. Su `metrics.json` es idéntico byte a byte al de `v1` |
+| `metadata.json` de `v-check` frente a `v1` | Solo difieren `version`, `fecha` y `git_commit` |
+| Predicciones de `v1` y `v2` sobre `data/ejemplo_prediccion.csv` | Archivos idénticos byte a byte a los generados antes de corregir |
+| Hashes de `models/v1` y `models/v2` | Sin cambios en los 6 archivos |
+
+### Limitación conocida
+
+Tres casos del entrenamiento terminan con código 1, pero con traceback. No crean la versión y son poco probables en este dataset.
+
+| Dónde | Caso | Qué pasa |
+|---|---|---|
+| `src/training.py`, `_prepare_target` | `vote_average` infinito | Solo se revisan nulos y texto. El modelo falla con `ValueError: Input contains infinity` |
+| `src/training.py`, `load_model_data` | `id` que no cabe en int64 | `OverflowError` no está entre las excepciones que se capturan |
+
+### Para el siguiente relevo
+
+**Qué quedó listo**
+
+- La suite de `tests/`, con 102 pruebas aprobadas.
+- Las correcciones 1 y 2, en `src/predicting.py` y `src/data.py`.
+
+**Cómo verificarlo**
+
+Desde `fase-2/`, ejecuta `python -m pytest`. Debe terminar con `102 passed`.
+
+**Qué falta**
+
+- **Paso 6, lo siguiente:** Docker. No se empezó, porque el motor de Docker no estaba disponible: `docker --version` respondió, pero `docker info` no pudo conectarse. Con el motor en marcha, hay que hacer el `Dockerfile`, el `.dockerignore`, `docs/docker.md` y la comparación de portabilidad, y escribir la sección "Paso 6 – Docker". El contenedor necesita `movies_metadata.csv` en `fase-2/data/`.
+- **Paso 7, después:** el README de `fase-2`, con las métricas de `v1` y `v2` y la explicación de la diferencia entre ellas.
+
+**A tener en cuenta**
+
+- `v1` y `v2` no se reentrenaron: las correcciones no cambian sus métricas ni sus predicciones. Su `git_commit` sigue apuntando a `878d57a`.
+
 ## Paso 6 – Docker
