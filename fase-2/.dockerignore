@@ -1,0 +1,34 @@
+# Lo que no debe llegar al contexto de construccion de la imagen.
+# Los patrones con **/ aplican en cualquier carpeta; sin eso, solo en la raiz.
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Caches de Python y de pytest
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+
+# Git
+.git/
+.gitignore
+
+# Carpetas que no usa la imagen
+notebooks/
+tests/
+models/
+outputs/
+
+# Datos
+**/*.csv
+**/*.zip
+
+# Credenciales
+**/.env
+**/.env.*
+**/kaggle.json
+**/*.pem
+**/*.key

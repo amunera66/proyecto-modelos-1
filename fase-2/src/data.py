@@ -4,9 +4,12 @@ import hashlib
 from collections.abc import Iterable
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src import config
+
+MAX_EXAMPLES = 5
 
 
 class DataError(Exception):
@@ -41,12 +44,29 @@ def read_raw_csv(path: str | Path) -> pd.DataFrame:
     return df
 
 
+def _validate_numeric_column(df: pd.DataFrame, column: str) -> pd.Series:
+    """Convierte una columna a numero. Un valor invalido es un error, nunca un nulo."""
+    numbers = pd.to_numeric(df[column], errors="coerce")
+    invalid = df[column].notna() & (numbers.isna() | np.isinf(numbers))
+    if invalid.any():
+        cells = df.loc[invalid, column]
+        examples = ", ".join(
+            f"fila {row + 1}: {value!r}" for row, value in cells.head(MAX_EXAMPLES).items()
+        )
+        remaining = len(cells) - MAX_EXAMPLES
+        raise DataError(
+            f"La columna {column} tiene valores no numericos: {examples}"
+            + (f" y {remaining} mas" if remaining > 0 else "")
+        )
+    return numbers
+
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """Aplica la limpieza de la Fase 1, en el mismo orden.
 
     1. Quita las filas con id no numerico (filas corruptas por parsing).
     2. Quita las filas sin vote_average (primera mitad de las lineas partidas).
-    3. Convierte id, budget y popularity (si existe) a tipo numerico.
+    3. Convierte id, budget, runtime y popularity (si existe) a tipo numerico.
     4. Quita los duplicados por id y conserva la primera aparicion.
     """
     id_numeric = pd.to_numeric(df[config.ID_COLUMN], errors="coerce")
@@ -55,6 +75,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     clean[config.ID_COLUMN] = clean[config.ID_COLUMN].astype("int64")
     clean["budget"] = pd.to_numeric(clean["budget"], errors="raise")
+    clean["runtime"] = _validate_numeric_column(clean, "runtime")
     if "popularity" in clean.columns:
         clean["popularity"] = pd.to_numeric(clean["popularity"], errors="raise")
 

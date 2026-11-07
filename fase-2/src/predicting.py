@@ -1,6 +1,8 @@
 """Prediccion con una version guardada. Nunca entrena ni reajusta transformaciones."""
 
+import csv
 import uuid
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,14 +33,35 @@ class PredictionResult:
     ignored_columns: tuple[str, ...]
 
 
+def _reject_extra_fields(path: Path, columns: int) -> None:
+    """Rechaza filas con datos de mas: index_col=False los descartaria sin avisar."""
+    with path.open(encoding="utf-8", newline="") as file:
+        reader = csv.reader(file)
+        for row in reader:
+            extra = [cell for cell in row[columns:] if cell.strip()]
+            if extra:
+                raise PredictionError(
+                    f"La linea {reader.line_num} del CSV {path} tiene mas campos que "
+                    f"el encabezado: {extra!r}"
+                )
+
+
 def read_input(path: str | Path) -> pd.DataFrame:
-    """Lee el CSV como texto, para validar cada celda y copiarla tal como vino."""
+    """Lee el CSV como texto, para validar cada celda y copiarla tal como vino.
+
+    index_col=False evita que pandas use la primera columna como indice cuando
+    las filas traen una coma final, lo que desplazaria las demas columnas.
+    """
     path = Path(path)
     if not path.is_file():
         raise PredictionError(f"No se encontro el archivo de entrada: {path}")
     try:
-        df = pd.read_csv(path, dtype=str, keep_default_na=False)
-    except (pd.errors.EmptyDataError, pd.errors.ParserError, UnicodeDecodeError) as error:
+        with warnings.catch_warnings():
+            # El aviso de la coma final sobra: _reject_extra_fields cubre lo importante
+            warnings.simplefilter("ignore", pd.errors.ParserWarning)
+            df = pd.read_csv(path, dtype=str, keep_default_na=False, index_col=False)
+        _reject_extra_fields(path, len(df.columns))
+    except (ValueError, csv.Error) as error:  # incluye los errores de pandas y de UTF-8
         raise PredictionError(f"No se pudo leer el CSV {path}: {error}") from error
     if df.empty:
         raise PredictionError(f"El CSV de entrada no tiene filas: {path}")
