@@ -292,7 +292,9 @@ Cada prueba está descrita en la sección "Paso 5 – Pruebas" de [docs/decision
 - [The Movies Dataset](https://www.kaggle.com/datasets/rounakbanik/the-movies-dataset), de Rounak Banik, en Kaggle.
 - Réplicas de la descripción del dataset, consultadas porque la página de Kaggle no la entregó: [hyper.ai](https://hyper.ai/en/datasets/34654) y [Baselight](https://baselight.app/u/kaggle/dataset/rounakbanik_the_movies_dataset).
 
-Los documentos del repositorio no registran código externo adaptado.
+Uso de asistentes de IA: el equipo usó Claude (Anthropic), mediante Claude Code, como asistente para generar y revisar código, pruebas y documentación. Las decisiones de modelado, partición y corrección las tomó el equipo con base en los análisis documentados, y todos los resultados reportados se obtuvieron ejecutando el código.
+
+Aparte de esa asistencia, los documentos del repositorio no registran código externo adaptado.
 
 ## Versión entregada
 
