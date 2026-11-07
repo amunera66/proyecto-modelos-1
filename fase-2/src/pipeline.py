@@ -11,8 +11,10 @@ from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardSc
 from src import config
 from src.features import prepare_model_input
 
-# Valores efectivos del modelo de la Fase 1. early_stopping="auto" activa la
-# parada temprana solo cuando el entrenamiento tiene mas de 10.000 filas.
+# Valores del modelo de la Fase 1, salvo early_stopping. Esa fase uso "auto", pero
+# la validacion interna de la parada temprana ignora los grupos y depende de la
+# semilla (decision c, ver docs/decisiones.md). Con False, el modelo no reproduce
+# el .joblib de la Fase 1: para eso, usa set_params(modelo__early_stopping="auto").
 HGB_PARAMS = {
     "loss": "squared_error",
     "quantile": None,
@@ -28,7 +30,7 @@ HGB_PARAMS = {
     "monotonic_cst": None,
     "interaction_cst": None,
     "warm_start": False,
-    "early_stopping": "auto",
+    "early_stopping": False,
     "scoring": "loss",
     "validation_fraction": 0.1,
     "n_iter_no_change": 10,

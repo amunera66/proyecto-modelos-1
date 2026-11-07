@@ -34,6 +34,7 @@ METADATA_KEYS = (
     "objetivo",
     "algoritmo",
     "contrato_entrada",
+    "sexta_predictora",
     "hiperparametros",
     "semilla",
     "datos",
@@ -91,7 +92,7 @@ def build_metadata(
 ) -> dict:
     """Arma metadata.json. data_info viene de data.describe_dataset.
 
-    partition debe traer: estrategia, test_size, n_train y n_test.
+    partition debe traer al menos: estrategia, test_size, n_train y n_test.
     """
     model = pipeline.named_steps["modelo"]
     sixth_feature = pipeline.named_steps["ceros_a_nan"].kw_args["sixth_feature"]
@@ -102,6 +103,7 @@ def build_metadata(
         "objetivo": target,
         "algoritmo": type(model).__name__,
         "contrato_entrada": config.input_contract(sixth_feature),
+        "sexta_predictora": sixth_feature,
         "hiperparametros": model.get_params(),
         "semilla": seed,
         "datos": data_info,
