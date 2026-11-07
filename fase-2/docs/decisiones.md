@@ -907,7 +907,7 @@ Las pruebas encontraron dos errores en código ya entregado: `src/data.py` es de
 
 ### Limitación conocida
 
-Tres casos del entrenamiento terminan con código 1, pero con traceback. No crean la versión y son poco probables en este dataset.
+Dos casos del entrenamiento terminan con código 1, pero con traceback. No crean la versión y son poco probables en este dataset.
 
 | Dónde | Caso | Qué pasa |
 |---|---|---|
@@ -927,7 +927,7 @@ Desde `fase-2/`, ejecuta `python -m pytest`. Debe terminar con `102 passed`.
 
 **Qué falta**
 
-- **Paso 6, lo siguiente:** Docker. No se empezó, porque el motor de Docker no estaba disponible: `docker --version` respondió, pero `docker info` no pudo conectarse. Con el motor en marcha, hay que hacer el `Dockerfile`, el `.dockerignore`, `docs/docker.md` y la comparación de portabilidad, y escribir la sección "Paso 6 – Docker". El contenedor necesita `movies_metadata.csv` en `fase-2/data/`.
+- **Paso 6:** ver la sección "Paso 6 – Docker".
 - **Paso 7, después:** el README de `fase-2`, con las métricas de `v1` y `v2` y la explicación de la diferencia entre ellas.
 
 **A tener en cuenta**
@@ -935,3 +935,57 @@ Desde `fase-2/`, ejecuta `python -m pytest`. Debe terminar con `102 passed`.
 - `v1` y `v2` no se reentrenaron: las correcciones no cambian sus métricas ni sus predicciones. Su `git_commit` sigue apuntando a `878d57a`.
 
 ## Paso 6 – Docker
+
+La imagen `modelos-fase2:1.0` ejecuta `train.py` y `predict.py` en Linux. Los comandos en PowerShell y Bash, el detalle de los resultados y la solución de problemas están en [docker.md](docker.md).
+
+### Imagen
+
+- **Base:** `python:3.12.10-slim`. Trae solo `requirements.txt`, `src/`, `train.py` y `predict.py`, en `/app`. Se comprobó dentro del contenedor que no hay CSV, modelos, credenciales ni `__pycache__`.
+- **Sin `ENTRYPOINT`.** El `CMD` por defecto es `python predict.py --help`, y no se entrena al construir.
+- **Tamaño:** 720 MB en disco y 153 MB comprimida, en `linux/arm64`. Las dependencias ocupan 401 MB.
+- **`requirements.txt` incluye pytest**, así que la imagen también lo trae, aunque no lleva `tests/`.
+- **`.dockerignore`:** los patrones usan `**/`, porque sin eso `__pycache__` solo aplica a la raíz y `COPY src/` lo copiaría. El contexto de construcción pesó cerca de 45 kB, con el CSV de 34 MB presente en `data/`.
+
+### Resultados
+
+Se verificó en Windows ARM64 con Docker Desktop (motor `linux/arm64`), en PowerShell y en Git Bash. La limpieza final solo se ejecutó en Git Bash.
+
+| Comprobación | Resultado |
+|---|---|
+| `v-docker`, entrenada en el contenedor con los defaults | CV RMSE 0,7946 y prueba RMSE 0,8007. `metrics.json` idéntico byte a byte al de `v1` |
+| `metadata.json` de `v-docker` frente a `v1` | Solo difieren `version`, `fecha` y `git_commit` |
+| `v1` en el contenedor frente a `predict.py` local, 12 filas | `np.allclose` verdadero, diferencia máxima 0,0 y CSV idénticos byte a byte |
+| Persistencia | Tras eliminar cada contenedor, seguían `models/v-docker` con sus 3 archivos y los CSV de `outputs/` |
+| Commit en `metadata.json` | El mismo hash de `git rev-parse HEAD`, recibido por `GIT_COMMIT`, porque la imagen no trae git |
+| Entrada sin `runtime` | `Error: Faltan columnas requeridas: runtime`, código 1 y sin archivo de salida |
+| Montajes `:ro` | Escribir en `/app/models` y `/app/data` falla con `Read-only file system` |
+| Hashes de `models/v1` y `models/v2` | Sin cambios en los 6 archivos |
+
+Con esto quedan comprobados, para Linux ARM64, los riesgos pendientes de los pasos 1, 3 y 4: `v1` se carga en Linux, y entrenar con el mismo comando da las mismas métricas.
+
+### Limitaciones
+
+- **Solo se comparó ARM64 con ARM64.** La plataforma de Windows y la del contenedor comparten arquitectura. No se comprobó en x86-64, donde Docker usaría la imagen `linux/amd64`. Tampoco queda explicada la diferencia con las métricas del profesor (Paso 1).
+- **La comparación de predicciones usa 12 filas,** las de `data/ejemplo_prediccion.csv`. La igualdad de `metrics.json` cubre las filas de prueba de un modelo entrenado en Linux, no las de `v1`.
+- **Git Bash necesita `MSYS_NO_PATHCONV=1`.** Sin esa variable, `/app/data` se convierte en una ruta de Windows. Los comandos no se probaron en Linux ni en macOS.
+- **El contenedor corre como root.** No afectó en Windows, pero en Linux los archivos creados en `models/` y `outputs/` podrían quedar a nombre de root. No se comprobó.
+- `v-docker` se borró y no se sube. Las dos versiones del repositorio siguen siendo `v1` y `v2`.
+
+### Para el siguiente relevo
+
+**Qué quedó listo**
+
+- `Dockerfile`, `.dockerignore` y `docs/docker.md`.
+- La comprobación de portabilidad de `v1` y la de entrenamiento en el contenedor.
+
+**Cómo verificarlo**
+
+Desde `fase-2/`, con Docker Desktop en marcha, sigue [docker.md](docker.md). La diferencia máxima de la comparación debe ser 0,0, y la entrada sin `runtime` debe terminar con código 1.
+
+**Qué falta: Paso 7**
+
+- El README de `fase-2`, con las métricas de `v1` y `v2` y la explicación de la diferencia entre ellas ("Paso 4 – Predicción"). Puede enlazar a `docs/docker.md` para los comandos de Docker.
+
+**A tener en cuenta**
+
+- `movies_metadata.csv` debe estar en `fase-2/data/` para entrenar. No se sube al repositorio.
