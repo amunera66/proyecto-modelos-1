@@ -5,6 +5,8 @@ Este documento responde a la retroalimentación del profesor sobre la Fase 1. Ca
 - **Notebook:** `fase-2/notebooks/analisis_correcciones.ipynb`.
 - **Decisiones:** `fase-2/docs/decisiones.md`.
 
+Las métricas de este documento son del análisis del Paso 2, con `early_stopping="auto"`. Las métricas finales del modelo están en la sección "Paso 3 – Entrenamiento" de `decisiones.md`.
+
 | Corrección | Resultado | Estado |
 |---|---|---|
 | C1. EDA | Predictoras sin redundancia; mayor correlación de 0,323 | Resuelta |

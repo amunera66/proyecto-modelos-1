@@ -180,7 +180,7 @@ versioning.save_version(modelo, metrics, metadata, "models", version)
 | `hiperparametros` | objeto | `get_params()` del regresor |
 | `semilla` | número | Semilla usada |
 | `datos` | objeto | `fuente`, `url`, `archivo`, `tamano_bytes`, `sha256`, `filas_antes_limpieza`, `filas_despues_limpieza`, `filas_tras_filtros` y `filtros` (`status`, `vote_count_minimo_exclusivo`) |
-| `horizonte_objetivo` | texto | Por ahora `no verificado` |
+| `horizonte_objetivo` | texto | Por ahora `no verificada`, con una nota (se actualizó en el Paso 3) |
 | `particion` | objeto | `estrategia`, `test_size`, `n_train`, `n_test` |
 | `metrica_principal` | texto | `RMSE`, la métrica con la que la Fase 1 eligió el modelo |
 | `entorno` | objeto | `python`, `librerias` (scikit-learn, pandas, numpy, joblib, scipy) y `requirements` |
@@ -220,7 +220,7 @@ python predict.py --help
 python
 ```
 
-Dentro de Python, pega esto. Debe imprimir `True`. Fija `es_franquicia` porque desde el Paso 2 el default es `es_secuela`:
+Dentro de Python, pega esto. Debe imprimir `True`. Fija `es_franquicia` porque desde el Paso 2 el default es `es_secuela`, y `early_stopping="auto"` porque desde el Paso 3 el default es `False`:
 
 ```python
 import joblib, numpy as np
@@ -229,7 +229,7 @@ from src import config, data, features, pipeline
 df = features.derive_features(data.apply_filters(data.clean_data(data.read_raw_csv("data/movies_metadata.csv"))))
 X, y = df[list(config.get_feature_names("es_franquicia"))], df[config.TARGET]
 X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=config.TEST_SIZE, random_state=config.SEED)
-modelo = pipeline.build_pipeline(config.SEED, "es_franquicia").fit(X_tr, y_tr)
+modelo = pipeline.build_pipeline(config.SEED, "es_franquicia").set_params(modelo__early_stopping="auto").fit(X_tr, y_tr)
 fase1 = joblib.load("../fase-1/models/modelo_vote_average.joblib")
 print(np.allclose(modelo.predict(X_te), fase1.predict(X_te)))
 ```
@@ -422,7 +422,7 @@ python -m jupyter nbconvert --to notebook --execute --inplace --ExecutePreproces
 
 **Cómo verificarlo**
 
-Desde `fase-2/`, con el CSV en `data/`, abre `python` en PowerShell o Bash y pega esto. Debe mostrar `RMSE` de 0,7949 en CV y 0,8007 en prueba:
+Desde `fase-2/`, con el CSV en `data/`, abre `python` en PowerShell o Bash y pega esto. Desde el Paso 3 debe mostrar `RMSE` de 0,7946 en CV y 0,8007 en prueba:
 
 ```python
 from sklearn.metrics import root_mean_squared_error
@@ -452,7 +452,7 @@ print(root_mean_squared_error(test[config.TARGET], modelo.predict(test[columnas]
 
 ### Métricas con las decisiones (a) y (b)
 
-Son los resultados con los defaults de `src/config.py`, semilla 42 y `early_stopping="auto"`. MAE / RMSE / R²:
+Son los resultados con los que se tomaron las decisiones (a) y (b): semilla 42 y `early_stopping="auto"`. Las métricas finales, tras resolver la decisión (c), están en "Paso 3 – Entrenamiento". MAE / RMSE / R²:
 
 | Modelo | CV (`GroupKFold(5)`) | Prueba |
 |---|---|---|
@@ -494,7 +494,7 @@ Filas: 17.335 en entrenamiento y 4.321 en prueba, sin colecciones compartidas.
 
 ### (c) Evaluar HGB sin parada temprana
 
-**Decisión pendiente de medir en el Paso 3:** evaluar HGB con `early_stopping=False` y `max_iter=100`. Todavía no se cambia en `pipeline.py`.
+**Decisión:** evaluar HGB con `early_stopping=False` y `max_iter=100`. **Se midió y se adoptó en el Paso 3:** el resultado está en "Paso 3 – Entrenamiento".
 
 **Justificación:** la validación interna de la parada temprana es aleatoria y no respeta grupos. Además, la Fase 1 usó 100 iteraciones.
 
@@ -502,13 +502,159 @@ Filas: 17.335 en entrenamiento y 4.321 en prueba, sin colecciones compartidas.
 
 - Las 100 iteraciones de la Fase 1 se dieron con `early_stopping="auto"` activo y con la semilla 42. Con otras semillas varió entre 51 y 100, y el modelo con los defaults actuales se detiene en 64.
 - `early_stopping=False` no reproduce el entrenamiento de la Fase 1: entrena con todo train, no con cerca del 90 %, y dejaría de ser igual al `.joblib`.
-- Las métricas de esta sección cambiarán si se aplica la decisión. El Paso 3 debe reportar las dos variantes con la misma partición.
+- Las métricas de esta sección son anteriores a la decisión. El Paso 3 reporta las dos variantes con la misma partición.
 
 ### Limitación general: fecha de corte
 
 La fecha de corte de `vote_average` queda **no verificada**. La descripción del dataset habla de películas hasta julio de 2017, según réplicas, pero no dice cuándo se descargaron los votos, y 12 películas de la población tienen fecha posterior. El objetivo es el promedio acumulado hasta esa fecha desconocida, con un horizonte distinto para cada película. El detalle está en la sección C5.
 
 ## Paso 3 – Entrenamiento
+
+`train.py` solo parsea argumentos y orquesta; la lógica está en `src/training.py`. Este paso también resolvió la decisión (c).
+
+### Decisión (c): parada temprana
+
+**Regla acordada:** adoptar `early_stopping=False` si no empeora el RMSE medio de CV en más de 0,005.
+
+**Resultado: se adopta.** El RMSE medio de CV mejora 0,0006, así que `build_pipeline` usa `early_stopping=False` y `max_iter=100`.
+
+Partición por grupos, `es_secuela` y las 10 semillas del Paso 2 (0 a 9). Media (desviación entre semillas):
+
+| Medida | `early_stopping="auto"` | `early_stopping=False` | Diferencia media |
+|---|---|---|---|
+| CV MAE | 0,6147 (0,0016) | 0,6140 (0,0016) | −0,0007 |
+| **CV RMSE** | **0,7945 (0,0024)** | **0,7938 (0,0023)** | **−0,0006** |
+| CV R² | 0,3506 (0,0036) | 0,3517 (0,0034) | +0,0010 |
+| Prueba MAE | 0,6143 (0,0054) | 0,6143 (0,0062) | 0,0000 |
+| Prueba RMSE | 0,7963 (0,0066) | 0,7965 (0,0077) | +0,0002 |
+| Prueba R² | 0,3512 (0,0081) | 0,3508 (0,0086) | −0,0003 |
+| Iteraciones | 76,4 (16,8), de 58 a 100 | 100 (0) | |
+
+- En CV, `False` gana en 7 de las 10 semillas; en prueba, en 4 de 10. En la práctica, las dos opciones rinden igual.
+- El motivo para adoptarlo no es la métrica. Con `False` el modelo no usa una validación interna que ignore los grupos, y es determinista: con los mismos datos, dos semillas de modelo dieron predicciones idénticas. Con `"auto"` no fue así.
+
+La semilla 42 no está entre esas 10, así que se midió aparte:
+
+| Semilla 42 | Iteraciones | CV: MAE / RMSE / R² | Prueba: MAE / RMSE / R² |
+|---|---|---|---|
+| `"auto"` | 64 | 0,6153 / 0,7949 / 0,3486 | 0,6187 / 0,8007 / 0,3491 |
+| `False` | 100 | 0,6150 / 0,7946 / 0,3490 | 0,6199 / 0,8007 / 0,3491 |
+
+### Métricas finales
+
+Son las de `train.py` con todos sus defaults: semilla 42, `group`, `es_secuela`, 17.335 filas de entrenamiento y 4.321 de prueba, sin grupos compartidos. La CV muestra la media (desviación entre folds):
+
+| Modelo | CV MAE | CV RMSE | CV R² | Prueba MAE | Prueba RMSE | Prueba R² |
+|---|---|---|---|---|---|---|
+| HGB | 0,6150 (0,0115) | 0,7946 (0,0217) | 0,3490 (0,0140) | 0,6199 | 0,8007 | 0,3491 |
+| Baseline | 0,7776 (0,0089) | 0,9852 (0,0176) | −0,0008 (0,0011) | 0,7854 | 0,9930 | −0,0010 |
+
+### Uso de train.py
+
+Los comandos se ejecutan desde `fase-2/`, con el CSV en `data/` y las dependencias de `requirements.txt`.
+
+PowerShell:
+
+```powershell
+python train.py --help
+python train.py --data data\movies_metadata.csv --version v1
+```
+
+Bash:
+
+```bash
+python train.py --help
+python train.py --data data/movies_metadata.csv --version v1
+```
+
+| Argumento | Default | Uso |
+|---|---|---|
+| `--data` | obligatorio | CSV crudo |
+| `--version` | obligatorio | Identificador de la versión. Nunca se sobrescribe |
+| `--target` | `vote_average` | Columna objetivo |
+| `--output-dir` | `models` | Carpeta de versiones |
+| `--seed` | 42 | Semilla de la partición y del modelo |
+| `--test-size` | 0.2 | Con `group` se aplica a los grupos, no a las filas |
+| `--min-votes` | 10 | Conserva `vote_count` mayor que este valor. `status == "Released"` es fijo |
+| `--split-strategy` | `group` | `random` sirve para comparar con la Fase 1 |
+| `--sixth-feature` | `es_secuela` | `es_franquicia` sirve para comparar con la Fase 1 |
+
+Los errores previsibles (archivo inexistente, columna ausente, objetivo inválido, versión repetida o inválida, sin datos tras los filtros) van a stderr, sin traceback, con código de salida 1. Los argumentos inválidos terminan con código 2. La versión se comprueba antes de entrenar.
+
+### Esquema de metrics.json
+
+```json
+{
+  "modelo": {
+    "algoritmo": "HistGradientBoostingRegressor",
+    "prueba": {"MAE": 0.0, "RMSE": 0.0, "R2": 0.0},
+    "cv": {
+      "MAE": {"media": 0.0, "desviacion": 0.0},
+      "RMSE": {"media": 0.0, "desviacion": 0.0},
+      "R2": {"media": 0.0, "desviacion": 0.0}
+    }
+  },
+  "baseline": {"algoritmo": "DummyRegressor", "prueba": {}, "cv": {}}
+}
+```
+
+`baseline` tiene la misma estructura que `modelo`. La desviación de la CV es entre folds.
+
+### Cambios en las interfaces
+
+- **`src/training.py` (nuevo):** `TrainingOptions`, `TrainingResult`, `TrainingError`, `train_model(options) -> TrainingResult`, `load_model_data(options)`, `describe_partition(df, train, test, options)` y `format_summary(result)`.
+- **`src/pipeline.py`:** `HGB_PARAMS` usa `early_stopping=False`.
+- **`src/splitting.py`:** `cross_validate_model` agrega las claves `MAE_desv` y `R2_desv`; las demás no cambian.
+- **`src/versioning.py`:** `metadata.json` agrega `sexta_predictora`, que `build_metadata` toma del Pipeline.
+- **`metadata.json`:** `particion` agrega `n_grupos`, `n_grupos_train`, `n_grupos_test`, `grupos_compartidos` y `cv` (`tipo`, `folds`).
+- **`src/config.py`:** `TARGET_HORIZON` ahora dice `no verificada` e incluye una nota.
+- El argumento se llama `--sixth-feature`, no `--franchise-feature` como decía el relevo del Paso 2.
+
+### Limitaciones de reproducibilidad
+
+- **`build_pipeline` ya no reproduce el `.joblib` de la Fase 1.** `--split-strategy random --sixth-feature es_franquicia` da RMSE 0,7795 en prueba, no 0,7813, porque la Fase 1 usó parada temprana. Para reproducirla exactamente hay que usar `set_params(modelo__early_stopping="auto")`, como hacen el notebook y el bloque de verificación del Paso 1.
+- **`--seed` solo cambia el resultado a través de la partición.** Sin parada temprana, la semilla no cambia el modelo si los datos son los mismos. Dos versiones con distinta semilla difieren porque entrenan con filas distintas.
+- **Mismo comando, mismas métricas.** Dos ejecuciones con el mismo comando dieron un `metrics.json` idéntico en este equipo. No se ha comprobado en Linux ni en Docker.
+- **`git_commit` no detecta cambios sin commit.** Registra el commit actual aunque el código tenga cambios locales: las versiones definitivas deben entrenarse sobre código ya confirmado.
+- Las métricas de los pasos 1 y 2 usan `early_stopping="auto"` y se conservan como registro de esas decisiones. También queda superado el riesgo sobre `early_stopping="auto"` del Paso 1.
+
+### Para el siguiente relevo
+
+**Qué quedó listo**
+
+- `train.py` y `src/training.py`, con metadatos y métricas completos.
+- La decisión (c), medida y aplicada en `build_pipeline`.
+- El notebook y los bloques de verificación de los pasos 1 y 2 siguen funcionando con la nueva configuración.
+
+**Cómo verificarlo**
+
+Desde `fase-2/`, con el CSV en `data/`. `models/v-test` no se sube al repositorio.
+
+PowerShell:
+
+```powershell
+python train.py --data data\movies_metadata.csv --version v-test
+python train.py --data data\movies_metadata.csv --version v-test
+$LASTEXITCODE
+Remove-Item -Recurse models\v-test
+```
+
+Bash:
+
+```bash
+python train.py --data data/movies_metadata.csv --version v-test
+python train.py --data data/movies_metadata.csv --version v-test
+echo $?
+rm -r models/v-test
+```
+
+La primera ejecución debe mostrar RMSE de 0,7946 en CV y 0,8007 en prueba. La segunda debe fallar con `La version ya existe` y código 1.
+
+**Qué falta: Paso 4**
+
+- `predict.py` y `src/predicting.py`, con `load_version` y el contrato de `metadata.json`. Deben validar que la sexta predictora no tenga nulos y solo tenga 0 o 1, porque el Pipeline no lo hace cumplir.
+- `data/ejemplo_prediccion.csv`, con `es_secuela` como sexta columna.
+- Las versiones `v1` y `v2`, entrenadas después de confirmar el código. La diferencia entre ellas debe quedar documentada y no conviene que sea solo una semilla del modelo con los mismos datos, porque daría el mismo resultado.
 
 ## Paso 4 – Predicción
 
