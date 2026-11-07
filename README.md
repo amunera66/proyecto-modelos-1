@@ -40,6 +40,7 @@ La ruta esperada por el notebook es `data/movies_metadata.csv`.
 proyecto-modelos-1/
   data/                  CSV del dataset (no versionado)
   fase-1/                Fase 1: notebook, modelo guardado y README de la fase
+  fase-2/                Fase 2: scripts, versiones del modelo, pruebas y Docker
   requirements.txt       Dependencias del proyecto
   requirements.lock.txt  Versiones exactas probadas por el equipo
   verificar_entorno.py   Comprueba que el entorno quedó bien instalado
@@ -75,11 +76,15 @@ Nota para Windows 11: si Smart App Control está activado, puede bloquear las DL
 
 El modelo seleccionado es un Pipeline de scikit-learn con HistGradientBoostingRegressor, entrenado con 17.324 películas estrenadas con más de 10 votos. En test (4.332 películas) obtiene MAE 0,606, RMSE 0,781 y R² 0,374, frente a MAE 0,782, RMSE 0,988 y R² 0,000 del baseline que predice la media. El detalle de la limpieza, la prevención de fuga de información, la evaluación y las limitaciones está en el [README de la Fase 1](fase-1/README.md).
 
+## Resultados de la Fase 2
+
+La [Fase 2](fase-2/README.md) convierte el modelo en una aplicación con `train.py`, `predict.py`, versiones guardadas, pruebas con pytest y Docker. Sus instrucciones, métricas y limitaciones están en su README.
+
 ## Fases
 
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Modelo predictivo ([`fase-1/`](fase-1/README.md)) | Completa |
-| 2 | Scripts y Docker | Pendiente |
+| 2 | Scripts y Docker ([`fase-2/`](fase-2/README.md)) | Completa |
 | 3 | API REST | Pendiente |
 | 4 | Monitoreo básico | Pendiente |
