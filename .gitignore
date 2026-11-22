@@ -114,3 +114,7 @@ _verificacion_grafico.png
 *.patch
 # Documento de contexto personal (no es entregable)
 contexto_proyecto_modelos1.md
+
+# Fase 4: el registro vivo de predicciones no se sube. La carpeta si (con .gitkeep)
+# y cualquier otro archivo, como uno de muestra, se puede versionar.
+fase-4/registros/predicciones.csv
