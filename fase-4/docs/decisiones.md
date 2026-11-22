@@ -12,7 +12,8 @@ Cada llamada a `POST /predict` agrega una fila a un CSV, también las rechazadas
 |---|---|
 | `registro/_fase3.py` | Agrega `<raíz>/fase-3` a `sys.path`, con una ruta relativa al propio archivo, y comprueba que `api` sea el de fase-3. Fase-3 hace lo mismo con fase-2 |
 | `registro/csv_logger.py` | `RegistroCSV(path)`, el observador, y `build_row` y `format_timestamp` |
-| `registro/app.py` | `app = create_app(observer=RegistroCSV(LOG_PATH))`, para `uvicorn registro.app:app` |
+| `registro/config.py` | `DEFAULT_LOG_PATH` y `log_path_from_env()`. Importarlo no crea la app ni carga el modelo |
+| `registro/app.py` | `app = create_app(observer=RegistroCSV(LOG_PATH))`, para `uvicorn registro.app:app`. Importarlo crea la app y carga el modelo |
 | `registros/.gitkeep` | La carpeta del registro queda en el repositorio; el registro vivo no |
 | `requirements.txt` | Las mismas versiones exactas de `fase-3/requirements.txt`, sin dependencias nuevas |
 | `pytest.ini` y `tests/` | Pruebas del registro |
@@ -34,7 +35,7 @@ Fase-3 llama al observador exactamente una vez por cada solicitud a `/predict`, 
 
 | Variable | Por defecto | Uso |
 |---|---|---|
-| `LOG_PATH` | `fase-4/registros/predicciones.csv` | Archivo del registro. Si es relativa, se resuelve desde la raíz del repositorio con `resolve_path` de fase-3 |
+| `LOG_PATH` | `fase-4/registros/predicciones.csv` | Archivo del registro. La lee `registro.config`; si es relativa, se resuelve desde la raíz del repositorio con `resolve_path` de fase-3, que se importa sin cargar el modelo |
 | `MODEL_VERSION`, `MODELS_DIR` | Los de fase-3 | Versión del modelo, sin cambios |
 
 PowerShell:
@@ -91,7 +92,7 @@ Desde `fase-4/`. El comando es igual en PowerShell y en Bash:
 python -m pytest -v
 ```
 
-Resultado en Windows ARM64, con Python 3.12.10: **11 pruebas aprobadas en 0,62 s**, sin advertencias. `pytest.ini` filtra el aviso de starlette sobre httpx. El registro va a un `tmp_path`; `fase-2/models/v1` solo se lee.
+Resultado en Windows ARM64, con Python 3.12.10: **14 pruebas aprobadas en 0,61 s**, sin advertencias. `pytest.ini` filtra el aviso de starlette sobre httpx. El registro va a un `tmp_path`; `fase-2/models/v1` solo se lee.
 
 | Prueba | Verifica |
 |---|---|
@@ -106,6 +107,10 @@ Resultado en Windows ARM64, con Python 3.12.10: **11 pruebas aprobadas en 0,62 s
 | `test_fecha_hora_en_utc_a_segundos` | Formato `AAAA-MM-DDTHH:MM:SS+00:00` y hora dentro del intervalo de la solicitud |
 | `test_format_timestamp_convierte_a_utc_y_trunca` | Una hora en otra zona se pasa a UTC y se truncan los microsegundos |
 | `test_escrituras_simultaneas_no_se_mezclan` | 8 hilos con 50 filas cada uno dejan 400 filas completas |
+| **`test_config.py`** | |
+| `test_importar_config_no_crea_la_app_ni_carga_el_modelo` | En un proceso aparte, con `MODEL_VERSION=v9`, `import registro.config` no importa `registro.app`, `api.main`, scikit-learn ni pandas, no escribe nada en stderr y da la ruta por defecto. Se comprobó que falla si `registro.config` importa `registro.app` |
+| `test_log_path_por_defecto_y_vacio` | Sin `LOG_PATH`, o con `LOG_PATH` vacía, se usa `fase-4/registros/predicciones.csv` |
+| `test_log_path_relativo_se_resuelve_desde_la_raiz` | Una ruta relativa se resuelve desde la raíz del repo, y una absoluta se respeta |
 
 ### Verificación manual
 
@@ -136,16 +141,19 @@ También se comprobó que, sin `LOG_PATH`, el registro va a `fase-4/registros/pr
 
 **Qué quedó listo**
 
-- `RegistroCSV` y `registro/app.py`, con el registro de cada intento a `/predict`.
-- 11 pruebas en `tests/`.
+- `RegistroCSV`, `registro/config.py` y `registro/app.py`, con el registro de cada intento a `/predict`.
+- 14 pruebas en `tests/`.
 
 **Formato del registro, para el script de monitoreo (Paso 4)**
 
-- Archivo: `fase-4/registros/predicciones.csv` por defecto, o el de `LOG_PATH`. UTF-8, coma, fin de línea `\n`, encabezado en la primera línea.
-- Columnas, en este orden: `fecha_hora,estado_http,version,prediccion`.
+- **Ubicar el registro con `registro.config`:** `from registro.config import log_path_from_env`. Devuelve `LOG_PATH` resuelta desde la raíz del repositorio, o `fase-4/registros/predicciones.csv` por defecto. Importarlo no crea la app ni carga el modelo. **No importes `registro.app`**, porque ese sí crea la app y carga el modelo.
+- **Columnas con `registro.csv_logger.COLUMNS`:** `("fecha_hora", "estado_http", "version", "prediccion")`, en ese orden. Ese módulo tampoco importa fase-3 ni scikit-learn.
+- Archivo en UTF-8, con coma, fin de línea `\n` y encabezado en la primera línea.
 - `fecha_hora`: `AAAA-MM-DDTHH:MM:SS+00:00`, siempre UTC. `pd.to_datetime(..., utc=True)` y `datetime.fromisoformat` lo leen directamente.
 - `estado_http`: entero. **Total de solicitudes** = número de filas sin el encabezado. **Fallidas** = filas con `estado_http >= 400`, es decir 4xx y 5xx. Porcentaje = fallidas / total × 100.
-- `version` y `prediccion` pueden estar vacías: en pandas, leer con `keep_default_na=True` (vacío → `NaN`), o con `dtype=str` y `keep_default_na=False` (vacío → `""`). Una fila de error tiene `prediccion` vacía; `version` también lo está en 400, 422 y 503.
+- **Cuenta las fallidas solo con `estado_http >= 400`, sin usar `version` ni `prediccion`.** Esas columnas pueden estar vacías por motivos distintos: un 500 lleva versión pero no predicción, y un 400, 422 o 503 no lleva ninguna de las dos. En pandas, `pd.read_csv` lee los vacíos como `NaN`; con `dtype=str` y `keep_default_na=False`, como `""`.
+- **Solo se registran los POST que llegan a `/predict`.** Un `GET /predict` responde 405 y no deja fila, y `/health` tampoco escribe. El total es el de los intentos de predicción, no el de todas las solicitudes al servidor.
+- **Las filas pueden no estar ordenadas por `fecha_hora`.** La hora es la de llegada, pero la fila se escribe al responder, así que con solicitudes simultáneas una más reciente puede quedar antes. No afecta el total ni el porcentaje; si el script filtra por intervalos de tiempo, debe ordenar o filtrar por `fecha_hora` y no suponer el orden del archivo.
 - El archivo puede no existir todavía, si no ha llegado ninguna solicitud, o estar vacío: el script debe manejar los dos casos con un mensaje claro.
 
 **Docker (Paso 6)**
