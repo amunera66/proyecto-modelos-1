@@ -28,6 +28,21 @@ def resolve_path(value: str | Path) -> Path:
     return path if path.is_absolute() else REPO_ROOT / path
 
 
+def display_path(path: Path) -> str:
+    """Ruta relativa a la raiz del repo si esta dentro de el, para no exponer rutas locales."""
+    try:
+        return path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def hide_root(text: str) -> str:
+    """Quita el prefijo de la raiz del repo de un mensaje de fase-2."""
+    for root in (str(REPO_ROOT.resolve()), str(REPO_ROOT)):
+        text = text.replace(root + "\\", "").replace(root + "/", "")
+    return text
+
+
 def _env(name: str, default: str) -> str:
     """Lee una variable de entorno; vacia o ausente equivale al valor por defecto."""
     return os.environ.get(name, "").strip() or default

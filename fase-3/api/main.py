@@ -1,10 +1,11 @@
-"""API REST de la Fase 3: GET /health y POST /predict.
+"""API REST de la Fase 3: GET /health, POST /predict y POST /train.
 
 Este modulo solo define create_app: importarlo no crea la app ni carga el
 modelo. El objeto app para uvicorn esta en api/app.py.
 Ejecutar desde fase-3/:  uvicorn api.app:app
 La logica de prediccion es la de fase-2/src (versioning y predicting): aqui solo
-se valida el JSON, se arma la respuesta y se avisa al observador.
+se valida el JSON, se arma la respuesta y se avisa al observador. La de /train
+esta en api/training.py y usa fase-2/src/training.py.
 """
 
 import json
@@ -12,7 +13,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -20,9 +20,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 
-from api._fase2 import REPO_ROOT  # debe ir antes de importar src
-from api import schema
+from api import _fase2  # noqa: F401  debe ir antes de importar src
+from api import schema, training
 from api.config import Settings
+from api.config import display_path as _display
+from api.config import hide_root as _hide_root
 from src import config as fase2_config
 from src import predicting, versioning
 from src.data import DataError
@@ -59,21 +61,6 @@ class ModelState:
     contract: list[dict] = field(default_factory=list)
     input_model: type[BaseModel] | None = None
     error: str | None = None
-
-
-def _display(path: Path) -> str:
-    """Ruta relativa a la raiz del repo si esta dentro de el, para no exponer rutas locales."""
-    try:
-        return path.resolve().relative_to(REPO_ROOT.resolve()).as_posix()
-    except ValueError:
-        return str(path)
-
-
-def _hide_root(text: str) -> str:
-    """Quita el prefijo de la raiz del repo de un mensaje de fase-2."""
-    for root in (str(REPO_ROOT.resolve()), str(REPO_ROOT)):
-        text = text.replace(root + "\\", "").replace(root + "/", "")
-    return text
 
 
 def _available_versions(settings: Settings) -> list[str]:
@@ -249,5 +236,26 @@ def create_app(settings: Settings | None = None, observer: Observer | None = Non
                 detalle=None if status == 200 else content,
             ))
         return JSONResponse(status_code=status, content=content)
+
+    # def, no async def: FastAPI lo corre en un hilo aparte y /health sigue
+    # respondiendo mientras se entrena. No recibe parametros: el cuerpo se ignora.
+    @app.post("/train", status_code=201)
+    def train() -> JSONResponse:
+        """Entrena una version nueva con la configuracion de la Fase 2 y la guarda.
+
+        No cambia la version que sirve /predict: para usarla hay que cambiar
+        MODEL_VERSION y reiniciar el servidor.
+        """
+        try:
+            result = training.train_new_version(settings, state.version)
+        except training.TrainingFailure as failure:
+            return JSONResponse(status_code=failure.status, content=failure.content)
+        except Exception:
+            logger.exception("Error inesperado en /train")
+            return JSONResponse(status_code=500, content={
+                "error": "Error interno al entrenar",
+                "detalle": "El detalle quedo en el log del servidor.",
+            })
+        return JSONResponse(status_code=201, content=result.content)
 
     return app
