@@ -214,7 +214,184 @@ Con `v1`, la predicción debe ser 6.758120437797601.
 
 ## Paso 2 – /train, pruebas y cliente
 
-Pendiente.
+Agrega `POST /train`, las pruebas con pytest y un cliente de prueba. No modifica `fase-1/`, `fase-2/` ni `fase-4/`. Las rutas de los comandos parten de `fase-3/`.
+
+### Archivos
+
+| Archivo | Contenido |
+|---|---|
+| `api/training.py` (nuevo) | Lógica de `/train`: siguiente identificador libre, reserva con lock, llamada a `src.training.train_model` y traducción de errores |
+| `api/main.py` | Registra `POST /train`. Las funciones `_display` y `_hide_root` pasaron a `api/config.py` para compartirlas con `api/training.py`; `/health` y `/predict` no cambian |
+| `api/config.py` | Agrega `display_path` y `hide_root`, las mismas funciones que estaban en `main.py` |
+| `pytest.ini` (nuevo) | `testpaths = tests` y el filtro de la advertencia de httpx |
+| `tests/conftest.py`, `tests/test_api.py`, `tests/test_train.py` (nuevos) | 21 pruebas |
+| `cliente/cliente.py` (nuevo) | Cliente con solo la biblioteca estándar |
+| `cliente/comandos_curl.md` (nuevo) | Los mismos pasos con curl, para Bash y PowerShell |
+
+### POST /train
+
+Entrena con la configuración de la Fase 2 y guarda una versión nueva en `MODELS_DIR`. **No cambia la versión que sirve `/predict`** (ver "Decisiones del equipo"): para usarla hay que cambiar `MODEL_VERSION` y reiniciar.
+
+- **Reutiliza `src/training.py`** igual que `train.py`: arma un `TrainingOptions` con `data_path = DATA_PATH`, `output_dir = MODELS_DIR` y el identificador nuevo, y deja los demás campos en sus defaults: objetivo `vote_average`, semilla 42, `test_size` 0.2, `min_votes` 10, partición `group` y `es_secuela`. Equivale a `python train.py --data <DATA_PATH> --output-dir <MODELS_DIR> --version vN`. No se copió lógica de fase-2.
+- **No recibe parámetros.** Acepta un cuerpo vacío; si llega un cuerpo, se ignora (ver "Decisiones del equipo").
+- **Identificador:** el siguiente `vN` libre en `MODELS_DIR`, a partir del mayor número existente: con `v1` y `v2`, `v3`. Solo cuentan los nombres `v` seguidos de dígitos; `v-test` o `v1-copia` no afectan la numeración.
+- **Sin choques:** un lock reserva el identificador antes de entrenar, así que dos `/train` simultáneos reciben `v3` y `v4`. El lock vale dentro de un proceso, y uvicorn corre con uno solo por defecto. Con varios procesos, `save_version` sigue sin sobrescribir y la API responde 409. El lock es una decisión del equipo (ver "Decisiones del equipo").
+- **Guardado:** con `save_version`, que nunca sobrescribe y escribe en una carpeta temporal que renombra al final. La respuesta llega cuando los tres archivos ya están guardados.
+- **Síncrono:** el endpoint es `def`, así que FastAPI lo corre en un hilo aparte y `/health` sigue respondiendo mientras se entrena. Una prueba lo comprueba.
+- **`git_commit`** se calcula igual que en fase-2: `git rev-parse HEAD` o, si no hay git (Docker), la variable `GIT_COMMIT`. Como en fase-2, no detecta cambios sin commit.
+- Con el CSV completo tarda unos 5 s en este equipo.
+
+Respuesta 201:
+
+```json
+{
+  "version": "v3",
+  "ruta": "fase-2/models/v3",
+  "metrica_principal": "RMSE",
+  "metricas": {
+    "modelo": {
+      "prueba": {"MAE": 0.6198764861376928, "RMSE": 0.8006998908850606, "R2": 0.3490927504445702},
+      "cv_media": {"MAE": 0.6150446841879766, "RMSE": 0.7946378625181731, "R2": 0.34903920749062983}
+    },
+    "baseline": {"prueba": {"MAE": 0.7854306778621616, "RMSE": 0.9929515949761448, "R2": -0.001003798354173746}}
+  },
+  "version_activa": "v1",
+  "detalle": "Version v3 guardada. La API sigue sirviendo v1: para usar v3, cambia MODEL_VERSION y reinicia el servidor."
+}
+```
+
+`ruta` es relativa a la raíz del repositorio. Si `MODELS_DIR` queda fuera del repositorio, se informa como `MODELS_DIR/v3`, para no exponer rutas del equipo donde corre la API. Las métricas completas quedan en `metrics.json`.
+
+**Errores.** Confirmados por el equipo (ver "Decisiones del equipo"). Ninguno muestra el traceback en la respuesta.
+
+| Caso | Código | Cuerpo |
+|---|---|---|
+| No existe el archivo de `DATA_PATH` | 503 | `{"error": "Datos de entrenamiento no disponibles", "detalle": "No se encontro el archivo de datos fase-2/data/movies_metadata.csv. Revisa DATA_PATH o el montaje de los datos y vuelve a intentar."}` |
+| El CSV no se puede leer o sus datos no sirven: columnas faltantes, valores que no se pueden procesar, objetivo inválido, sin películas tras los filtros | 500 | `{"error": "Datos de entrenamiento invalidos", "detalle": "<archivo>: <mensaje de fase-2>"}` |
+| Otro proceso guardó el mismo identificador mientras se entrenaba | 409 | `{"error": "La version ya existe", "version": "v3", "detalle": "..."}` |
+| No se puede escribir en `MODELS_DIR`, por ejemplo con un montaje de solo lectura | 500 | `{"error": "No se pudo guardar la version", "version": "v3", "detalle": "... Revisa que MODELS_DIR exista y tenga permiso de escritura ..."}`; el traceback queda en el log |
+| Cualquier otro error inesperado | 500 | `{"error": "Error interno al entrenar", "detalle": "El detalle quedo en el log del servidor."}` |
+
+Por qué esos códigos: el cliente no envía datos, así que un problema con el CSV no es un error de la solicitud (4xx) sino del servidor. Se usa 503 cuando falta el archivo, porque se resuelve montándolo o corrigiendo `DATA_PATH` y volviendo a intentar, y 500 cuando el archivo existe pero sus datos no sirven. El campo `error` distingue los casos. Ningún error deja una versión a medias.
+
+### Pruebas
+
+Desde `fase-3/`, con las dependencias de `requirements.txt`. Debe ser `python -m pytest`, no `pytest`, para que `api` se pueda importar. El comando es igual en PowerShell y en Bash:
+
+```
+python -m pytest -v
+```
+
+Resultado en Windows ARM64, con Python 3.12.10: **21 pruebas aprobadas en cerca de 1,5 s**, sin advertencias.
+
+**Modelo pequeño: `fase-2/models/v1`.** Está en el repositorio, pesa cerca de 380 KB y carga en menos de un segundo. Permite comparar con la predicción ya verificada en el Paso 1 (6.758120437797601 para Dune) sin entrenar nada para probar `/predict`. Un modelo sintético exigiría entrenarlo en cada ejecución y no se podría comparar con `predict.py`. Se usa en modo solo lectura: el fixture `modelos_del_repo_intactos` compara los hashes de `fase-2/models` al inicio y al final, y falla si cambiaron. Además, los `Settings` de esas pruebas apuntan `DATA_PATH` a un archivo inexistente, así que un `/train` por error respondería 503 sin escribir. Las pruebas de `/train` copian `v1` y `v2` a `tmp_path` y escriben ahí.
+
+| Prueba | Verifica |
+|---|---|
+| **Obligatorias** (`test_api.py`) | |
+| `test_health_responde_200` | 200 y el cuerpo completo de `/health` |
+| `test_entrada_valida_devuelve_prediccion_y_version` | 200, claves exactas `prediccion` y `version`, versión `v1` y la predicción de Dune |
+| `test_entrada_sin_variable_obligatoria_se_rechaza` | Sin `runtime`: 422 con `campo: runtime` y `Campo obligatorio ausente; si el dato falta, envia null` |
+| **Extras** (`test_api.py`) | |
+| `test_tipo_o_valor_invalido_da_422` (3 casos) | `es_secuela: 2`, `budget: "mucho"` y `runtime: true`: 422 con el campo, el mensaje y el valor recibido |
+| `test_json_mal_formado_da_400` | 400 con `JSON mal formado` |
+| `test_campo_extra_se_ignora` | Un campo de más da la misma predicción |
+| `test_runtime_null_predice` | `runtime: null` da 200 con una predicción finita y distinta |
+| `test_version_inexistente_da_503` | Con `v9`: `/predict` da 503 y lista `v1, v2`; `/health` informa `modelo_disponible: false` |
+| `test_error_del_modelo_da_500_sin_traceback` | Un modelo que lanza una excepción da 500 sin traceback ni el mensaje interno |
+| `test_version_informada_es_la_configurada_por_variable` | Con la variable `MODEL_VERSION=v2`, `/health` y `/predict` informan `v2` |
+| `test_version_informada_es_el_nombre_de_la_carpeta` | Una copia de `v1` llamada `mi-version` se informa como `mi-version` |
+| `test_observador_se_llama_una_vez_por_intento` | 200, 422 y 400 producen 3 eventos, en orden; `/health` no produce eventos |
+| `test_observador_tambien_recibe_503` | Sin modelo, un intento produce un evento 503 |
+| **`/train`** (`test_train.py`, CSV sintético de 60 películas) | |
+| `test_train_es_sincrono` | El endpoint no es `async def` |
+| `test_train_crea_version_nueva_y_no_cambia_la_activa` | Sin cuerpo: 201 con `v3`, los tres archivos y `metadata.json` con objetivo y semilla 42; `v1` y `v2` sin cambios (hashes); `/health` y `/predict` siguen en `v1`; un segundo `/train` da `v4`; una app nueva con `v3` predice con `v3` |
+| `test_train_sin_archivo_de_datos_da_503` | 503 y no crea carpetas |
+| `test_train_con_datos_invalidos_da_500_sin_traceback` | CSV sin `vote_average`: 500 con el mensaje de fase-2 y sin temporales a medias |
+| `test_siguiente_identificador` | `v1` en una carpeta vacía; ignora `v-test`, `v10-copia` y `V20`; cuenta un archivo `v7` y las reservas |
+| `test_train_simultaneos_no_repiten_identificador` | Dos llamadas a la vez reciben `v3` y `v4`. Usa un entrenamiento falso con una barrera para que las dos estén "entrenando" al mismo tiempo |
+
+Se comprobó que la última prueba detecta el error: sin la reserva, los dos hilos eligen `v3` y la prueba falla.
+
+**Advertencia de httpx.** `pytest.ini` filtra solo `StarletteDeprecationWarning` con el mensaje `Using httpx with starlette.testclient is deprecated`. Cualquier otra advertencia se sigue mostrando.
+
+### Cliente de prueba
+
+`cliente/cliente.py` usa solo la biblioteca estándar (`urllib`). Consulta `/health`, envía una predicción a `/predict` y muestra la solicitud y la respuesta. Termina con código 0 si las dos respuestas son 200, y con 1 si no lo son o si no se puede conectar.
+
+```
+python cliente/cliente.py
+python cliente/cliente.py --url http://localhost:8001
+```
+
+**La entrada es una película real: Toy Story 2** (id 863). Se tomó su fila de `movies_metadata.csv` y se derivaron las 6 predictoras con las funciones de fase-2 sobre el CSV completo: `data.clean_data`, `features.add_sequel_feature`, `data.apply_filters` y `features.derive_features`. Hay que usar el CSV completo porque `es_secuela` depende de las demás películas de la colección. Los valores quedan fijos en el script:
+
+```json
+{"budget": 90000000, "runtime": 92, "release_year": 1999, "es_secuela": 1, "genero_principal": "Animation", "original_language": "en"}
+```
+
+En el CSV su `vote_average` es 7.3, con 3914 votos. Con `v1` la predicción es **6.2250117576267305**, igual a la de `predicting.prepare_input` y `predicting.predict_rows` de fase-2. La película puede haber quedado en el entrenamiento de `v1`, así que esto no evalúa el modelo. Los valores de `data/ejemplo_prediccion.csv` son ilustrativos y no se usaron.
+
+`cliente/comandos_curl.md` tiene los mismos pasos con `curl` en Bash, y con `Invoke-RestMethod` y `curl.exe` en PowerShell. Con `curl.exe` el JSON se pasa por la entrada estándar (`--data-binary "@-"`), porque Windows PowerShell 5.1 quita las comillas dobles de un argumento. Los comandos de PowerShell se probaron contra el servidor.
+
+### Verificación manual
+
+Con `python -m uvicorn api.app:app --port 8000` desde `fase-3/` (Windows ARM64, Python 3.12.10). Antes se guardaron los hashes de los archivos de `v1` y `v2`.
+
+| Paso | Resultado |
+|---|---|
+| (a) `python cliente/cliente.py` | `/health` 200 con `v1`; `/predict` 200 con `{"prediccion": 6.2250117576267305, "version": "v1"}`; código de salida 0 |
+| (b) `POST /train` sin cuerpo | 201 en 5,5 s, con `version: v3` y `ruta: fase-2/models/v3`. Un `/health` enviado durante el entrenamiento respondió 200 en 0,2 s |
+| (b) Carpeta nueva | `fase-2/models/v3` con `metadata.json`, `metrics.json` y `modelo.joblib`. `metadata.json` trae `version: v3`, `objetivo: vote_average`, `semilla: 42` y el `git_commit` actual |
+| (b) Versiones anteriores | `sha256sum -c` da OK en los 6 archivos de `v1` y `v2` |
+| (b) Versión activa | `/predict` siguió informando `v1` |
+| (c) Reinicio con `MODEL_VERSION=v3` | `/health` y `/predict` informan `v3`. Toy Story 2 da 6.2250117576267305 y Dune 6.758120437797601, igual que con `v1` |
+| (d) Limpieza | Se borró `fase-2/models/v3`; los hashes de `v1` y `v2` siguen iguales |
+
+`v3` dio las mismas métricas y predicciones que `v1`, y su `metrics.json` es idéntico byte a byte: se entrenó con el mismo CSV, la misma semilla y el mismo código de entrenamiento. Coincide con lo que la Fase 2 documentó sobre el determinismo sin parada temprana. El `git_commit` registrado fue el de `HEAD`, aunque había cambios sin commit en `fase-3/`. Es la limitación ya conocida de fase-2, y aquí no afecta el resultado, porque el código de entrenamiento es el de fase-2, sin cambios.
+
+### Para el siguiente relevo
+
+Este relevo reemplaza la lista "Qué falta" del Paso 1, cuyo Paso 2 ya quedó hecho.
+
+**Qué quedó listo**
+
+- `POST /train`, las 21 pruebas con `pytest.ini` y el cliente con sus comandos curl.
+
+**Cómo verificarlo**
+
+Desde `fase-3/`, `python -m pytest -v` debe dar 21 pruebas aprobadas. Con el servidor corriendo, `python cliente/cliente.py` debe mostrar 6.2250117576267305 con `v1`. Un `POST /train` crea `fase-2/models/v3`, que **no se sube al repositorio**. Como `.gitignore` permite `fase-2/models/**`, aparecerá en `git status`: bórrala después de probar.
+
+PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/train
+Remove-Item -Recurse ..\fase-2\models\v3
+```
+
+Bash:
+
+```bash
+curl -s -X POST http://localhost:8000/train
+rm -r ../fase-2/models/v3
+```
+
+**Qué falta: Paso 3, Docker y README de `fase-3/`**
+
+- **Puerto 8000.** Dentro del contenedor, uvicorn debe escuchar en `0.0.0.0`: `python -m uvicorn api.app:app --host 0.0.0.0 --port 8000`, ejecutado desde `/app/fase-3`, y publicarse con `-p 8000:8000`. Con el `127.0.0.1` por defecto, el cliente no llega desde fuera del contenedor.
+- **Montajes.** La imagen no lleva datos ni modelos.
+  - Datos en **solo lectura**: la carpeta con `movies_metadata.csv` en `/app/fase-2/data`, con `:ro`. Es el `DATA_PATH` por defecto.
+  - `models/` **con escritura**: `fase-2/models` en `/app/fase-2/models`, sin `:ro`, porque `/train` guarda ahí la versión nueva, que así queda en el equipo al borrar el contenedor. Con un montaje de solo lectura, `/train` responde 500 con `No se pudo guardar la version`.
+  - Las rutas relativas de `DATA_PATH` y `MODELS_DIR` se resuelven desde la raíz del repositorio, que en la imagen es `/app` si se conserva la estructura `/app/fase-2/src` y `/app/fase-3/api`.
+- **`GIT_COMMIT`.** En la imagen no hay git ni `.git`, así que `metadata.json` toma el commit de esta variable; sin ella queda `no disponible`. Se pasa al ejecutar: `-e GIT_COMMIT=$(git rev-parse HEAD)` en Bash y `-e "GIT_COMMIT=$(git rev-parse HEAD)"` en PowerShell.
+- **`.dockerignore`.** Además de lo que el Paso 1 lista para `fase-3/Dockerfile.dockerignore`, hay que excluir `fase-3/tests/`, `fase-3/cliente/`, `fase-3/pytest.ini`, `**/.pytest_cache/` y `fase-2/models/`: las pruebas y el cliente no corren en la imagen, y los modelos se montan.
+- **Cliente.** Corre desde el equipo, no desde el contenedor: `python cliente/cliente.py` desde `fase-3/`, con `--url` si se publica en otro puerto. No necesita dependencias.
+- **README.** Debe incluir un ejemplo de solicitud y respuesta de `/predict`, por ejemplo la salida del cliente con Toy Story 2, y también uno de `/train`. Debe explicar que `/train` no cambia la versión activa y que, para usar la nueva, se cambia `MODEL_VERSION` y se reinicia, y cómo correr las pruebas.
+
+**A tener en cuenta**
+
+- **`fase-2/models/` debe tener permiso de escritura** donde corra `/train`. En Linux, el usuario del contenedor debe poder escribir en el montaje.
+- **Varios workers:** el lock de `/train` es por proceso. Con varios workers de uvicorn, dos entrenamientos simultáneos podrían elegir el mismo identificador; `save_version` no sobrescribe y uno de los dos recibe 409.
 
 ## Paso 3 – Docker y README
 
@@ -225,3 +402,15 @@ Pendiente.
 ### /train no cambia la versión que sirve la API
 
 Decidido en la revisión del PR #14. `POST /train` crea una versión nueva en `MODELS_DIR`, pero no cambia la que sirve `/predict`: la API sigue con la versión que cargó al iniciar. Para usar la versión nueva hay que cambiar `MODEL_VERSION` y reiniciar el servidor. Es coherente con la decisión del Paso 1 de cargar el modelo al iniciar, sin recarga en caliente.
+
+### Códigos de error de /train
+
+Confirmado por el equipo en el Paso 2. `POST /train` responde 503 si no existe el archivo de `DATA_PATH`; 500 con `"Datos de entrenamiento invalidos"` si el CSV existe pero sus datos no sirven; 409 si otro proceso guardó el mismo identificador mientras se entrenaba; 500 con `"No se pudo guardar la version"` si no se puede escribir en `MODELS_DIR`, y 500 con `"Error interno al entrenar"` ante cualquier otro error. Ninguna respuesta muestra el traceback. El cliente no envía los datos, así que un problema con el CSV es del servidor y no se responde con 4xx. La tabla completa está en "Paso 2 – /train, pruebas y cliente".
+
+### /train ignora el cuerpo
+
+Confirmado por el equipo en el Paso 2. `POST /train` no recibe parámetros: acepta un cuerpo vacío y, si llega uno, lo ignora. Siempre entrena con la configuración de la Fase 2 (`DATA_PATH`, objetivo `vote_average`, semilla 42 y los demás defaults de `TrainingOptions`).
+
+### Un lock reserva el identificador de /train
+
+Confirmado por el equipo en el Paso 2. Antes de entrenar, `/train` reserva el siguiente `vN` libre con un lock, así que dos llamadas simultáneas reciben identificadores distintos y pueden entrenar a la vez. El lock vale dentro de un proceso; con varios workers de uvicorn, `save_version` sigue sin sobrescribir y una de las llamadas recibe 409.
