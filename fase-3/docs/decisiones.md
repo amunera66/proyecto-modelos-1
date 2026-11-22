@@ -395,7 +395,58 @@ rm -r ../fase-2/models/v3
 
 ## Paso 3 – Docker y README
 
-Pendiente.
+Agrega `fase-3/Dockerfile`, `fase-3/Dockerfile.dockerignore` y `fase-3/README.md`. No modifica `fase-1/`, `fase-2/`, `fase-4/` ni el código de `fase-3/api`, `fase-3/tests` o `fase-3/cliente`. Los comandos de Docker parten de la raíz del repositorio.
+
+### Qué se decidió
+
+| Decisión | Motivo |
+|---|---|
+| Construir desde la raíz: `docker build -f fase-3/Dockerfile -t modelos-fase3:1.0 .` | La imagen necesita `fase-2/src`, que está fuera de `fase-3/` |
+| Base `python:3.12.10-slim`, la misma de la Fase 2 | Misma versión de Python que el entorno local |
+| `/app` es la raíz del repositorio: la imagen copia `fase-2/src` en `/app/fase-2/src` y `fase-3/api` en `/app/fase-3/api` | `api/_fase2.py` calcula `<raíz>/fase-2` desde su propio archivo, y las rutas por defecto (`fase-2/models`, `fase-2/data/movies_metadata.csv`) caen justo en los montajes. No hace falta `PYTHONPATH` ni pasar `MODELS_DIR` o `DATA_PATH` |
+| Directorio de trabajo `/app/fase-3` y `CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]`, con `EXPOSE 8000` | uvicorn agrega la carpeta actual a `sys.path`, así que `api` se importa desde ahí. Con `0.0.0.0` responde fuera del contenedor |
+| Se instala `fase-3/requirements.txt` completo, incluidos pytest y httpx | Es el archivo de dependencias de la fase; separar las de pruebas cambiaría el código de la fase. Las pruebas no se copian a la imagen |
+| `Dockerfile.dockerignore` excluye todo (`*`) y vuelve a incluir solo `fase-2/src/`, `fase-3/api/` y `fase-3/requirements.txt`. Dentro de eso excluye cachés, CSV, ZIP, modelos (`*.joblib`, `*.pkl`) y credenciales | Una lista de exclusión tendría que nombrar cada carpeta de la raíz y se rompería al agregar una nueva. Con la lista de inclusión, `dataset/`, `.venv/`, `.git/`, `fase-1/`, `fase-4/`, los datos, los modelos, `outputs/`, las pruebas, el cliente y los parches no llegan nunca |
+| Datos montados en solo lectura y `fase-2/models` con escritura | `/train` guarda la versión nueva en el equipo; los datos no deben cambiar |
+| Sin `HEALTHCHECK` ni usuario no root | La imagen base no trae `curl`, y el montaje de modelos debe tener escritura; en Docker Desktop (Windows) los archivos quedan en el equipo sin problemas de permisos. Queda como mejora |
+
+### Verificación en Docker
+
+Windows 11 ARM64, Docker Desktop 4.98.0 (Docker 29.9.2, motor `linux/arm64`). Contenedor con `-p 8000:8000`, `fase-2/data` en `/app/fase-2/data:ro`, `fase-2/models` en `/app/fase-2/models` y `GIT_COMMIT` con el hash de `HEAD`. El flujo completo se ejecutó en Windows PowerShell 5.1 y se repitió en Git Bash (GNU bash 5.3) hasta `/train`.
+
+| Paso | Resultado |
+|---|---|
+| Contexto de construcción | 17 archivos, 85.574 bytes. Se midió con una construcción aparte que copia todo el contexto, con el mismo `.dockerignore` |
+| Imagen | `modelos-fase3:1.0`, 746 MB en disco y 159 MB comprimida |
+| `/app` en el contenedor | Solo `fase-2/src` (9 archivos `.py`), `fase-3/api` (7 archivos `.py`) y `fase-3/requirements.txt`: 17 archivos, sin datos, modelos, credenciales ni `__pycache__`. No hay git |
+| (a) `/health` | 200, `{"estado": "en_ejecucion", "version": "v1", "modelo_disponible": true, "detalle": null}` |
+| (b) `python cliente/cliente.py` desde el equipo | `/health` 200 y `/predict` 200 con `{"prediccion": 6.2250117576267305, "version": "v1"}`, igual que en local; código de salida 0 |
+| (c) Toy Story 2 sin `runtime` | 422, `campo: runtime`, `Campo obligatorio ausente; si el dato falta, envia null` |
+| (d) `POST /train` | 201 en 19 s, con `version: v3` y `version_activa: v1`. En el equipo apareció `fase-2/models/v3` con `metadata.json`, `metrics.json` y `modelo.joblib`; `metadata.json` registró el `git_commit` pasado en `GIT_COMMIT`, y `metrics.json` es idéntico al de `v1`. `/predict` siguió en `v1` |
+| (d) Persistencia | Después de `docker stop` y `docker rm`, `fase-2/models/v3` seguía en el equipo con sus tres archivos |
+| (e) `MODEL_VERSION=v2` | `/health` y `/predict` informan `v2`. Toy Story 2 da 6.473487560963072 y Dune 7.083528517809986, igual que en el Paso 1 |
+| `MODEL_VERSION=v9` | `/health` 200 con `modelo_disponible: false`; `/predict` 503, con las versiones disponibles en el mensaje |
+| `MODELS_DIR=/modelos` y `DATA_PATH=/datos/movies_metadata.csv`, con los modelos en `:ro` | `/predict` 200 con `v1`; `/train` 500 con `No se pudo guardar la version` y la ruta `/modelos` en el mensaje |
+| (f) `python -m pytest` en local | 21 pruebas aprobadas. También en un entorno nuevo con `requirements.txt` instalado, donde `pip check` no reportó conflictos |
+| Limpieza | Se borraron `v3` y la `v4` creada en la repetición con Git Bash; `git status` no muestra cambios en `fase-2/models` |
+
+También se comprobó en local `python -m uvicorn api.app:app --port 8000` con el cliente: misma respuesta que en Docker.
+
+### Para el siguiente relevo
+
+**Qué quedó listo**
+
+- La imagen de la API y su `.dockerignore`, y el README de `fase-3/` con la ejecución local y en Docker, los endpoints, los errores, la selección de versión, el cliente, las pruebas y las limitaciones.
+
+**Cómo verificarlo**
+
+Desde la raíz, construir y correr el contenedor como en la sección "Ejecución con Docker" del README; luego, desde `fase-3/`, `python cliente/cliente.py` debe mostrar 6.2250117576267305 con `v1`. Un `POST /train` crea `fase-2/models/v3`, que no se sube: bórrala después de probar.
+
+**A tener en cuenta**
+
+- **El log del contenedor solo muestra los mensajes de uvicorn y los avisos o errores de la API.** El logger `api` no tiene un handler propio, así que sus mensajes `INFO` (como `Entrenando la version ...`) no aparecen; los `WARNING` y `ERROR` sí. Configurarlo sería un cambio de código.
+- **README y Docker de la Fase 4.** La imagen de este paso sirve `api.app:app`, que no registra las predicciones. La Fase 4 tiene su propia app con el observador (`fase-4/registro/app.py`). Su Docker puede partir de este Dockerfile, copiar también `fase-4/registro` conservando la estructura y montar `fase-4/registros` con escritura; su `.dockerignore` tendría que volver a incluir esa carpeta.
+- La portabilidad solo se comprobó en ARM64.
 
 ## Decisiones del equipo
 
