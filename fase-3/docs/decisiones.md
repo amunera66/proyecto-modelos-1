@@ -13,7 +13,8 @@ API REST con FastAPI en `fase-3/api/`, con `GET /health` y `POST /predict`. No m
 | `api/_fase2.py` | Agrega `<raíz>/fase-2` a `sys.path` y comprueba que `src` sea el de fase-2. Define `REPO_ROOT` |
 | `api/config.py` | `Settings` y `Settings.from_env()`: variables de entorno y resolución de rutas |
 | `api/schema.py` | Esquema de `/predict` construido desde `contrato_entrada`, traducción de errores y paso a DataFrame |
-| `api/main.py` | `create_app(settings=None, observer=None)`, `EventoPrediccion` y el objeto `app` para uvicorn |
+| `api/main.py` | `create_app(settings=None, observer=None)` y `EventoPrediccion`. Importarlo no crea la app ni carga el modelo |
+| `api/app.py` | Solo `app = create_app()`, el objeto que usa uvicorn: `uvicorn api.app:app` |
 | `requirements.txt` | Las 6 dependencias de fase-2 más las de la API, todas con versión exacta |
 
 ### Cómo se reutiliza fase-2
@@ -54,11 +55,11 @@ PowerShell:
 ```powershell
 cd fase-3
 python -m pip install -r requirements.txt
-python -m uvicorn api.main:app --port 8000
+python -m uvicorn api.app:app --port 8000
 
 # Otra versión: cambiar la variable y reiniciar
 $env:MODEL_VERSION = "v2"
-python -m uvicorn api.main:app --port 8000
+python -m uvicorn api.app:app --port 8000
 Remove-Item Env:MODEL_VERSION
 ```
 
@@ -67,10 +68,10 @@ Bash:
 ```bash
 cd fase-3
 python -m pip install -r requirements.txt
-python -m uvicorn api.main:app --port 8000
+python -m uvicorn api.app:app --port 8000
 
 # Otra versión: cambiar la variable y reiniciar
-MODEL_VERSION=v2 python -m uvicorn api.main:app --port 8000
+MODEL_VERSION=v2 python -m uvicorn api.app:app --port 8000
 ```
 
 La documentación interactiva queda en `http://localhost:8000/docs`, con el esquema del cuerpo de `/predict` tomado del contrato de la versión cargada.
@@ -108,9 +109,12 @@ Recibe un objeto JSON con las 6 predictoras y devuelve `{"prediccion": 6.7581204
 | JSON mal formado, o que no es un objeto | 400 | `{"error": "JSON mal formado", "detalle": "..."}` |
 | Clave ausente, tipo incompatible, `null` no permitido, valor fuera de 0 y 1 | 422 | `{"error": "Entrada invalida", "detalle": [{"campo": "runtime", "mensaje": "...", "valor_recibido": ...}]}`, un elemento por campo |
 | Versión no disponible | 503 | `{"error": "Modelo no disponible", "version": "v9", "detalle": "..."}` |
-| Error inesperado | 500 | `{"error": "Error interno al predecir"}`; el traceback queda solo en el log |
+| El modelo falla con una entrada que ya pasó la validación | 500 | `{"error": "Error interno al predecir", "version": "v1", "detalle": "El modelo de la version v1 no pudo predecir con una entrada valida. ..."}`; el traceback queda solo en el log |
+| Cualquier otro error inesperado | 500 | `{"error": "Error interno al predecir"}`; el traceback queda solo en el log |
 
 Si el modelo no está disponible, `/predict` responde 503 sin validar la entrada, porque el esquema depende del contrato de la versión.
+
+**Versión informada.** `/predict` y `/health` informan la versión configurada, `MODEL_VERSION`, que es el nombre de la carpeta. Si `metadata["version"]` no coincide con ese nombre, por ejemplo en una carpeta copiada con otro nombre, la API la carga igual y deja un aviso en el log.
 
 **Dos capas de validación.** Lo que pasa por pydantic se escribe como un DataFrame de una fila, en texto, y entra a `predicting.prepare_input`, que aplica las reglas de la Fase 2: nulos, conversión numérica, valores válidos y orden de columnas. Los decimales se escriben con `repr`, que conserva el valor exacto. Si esa segunda capa rechaza algo, la respuesta es 422 con su mensaje.
 
@@ -154,6 +158,14 @@ Con uvicorn en local (Windows ARM64, Python 3.12.10): `MODEL_VERSION` sin defini
 
 Con `TestClient` también se comprobó que el observador recibió 7 eventos por 7 solicitudes, entre ellas 400 y 422, y que un observador que falla no cambia la respuesta 200.
 
+**Tras la revisión del PR #14.** Se repitieron con uvicorn (`uvicorn api.app:app`) los casos (a), (b), (d) y (g), con los mismos resultados. Además, con `TestClient`:
+
+| Caso | Resultado |
+|---|---|
+| `import api.main` | No crea la app, no carga el modelo y no escribe en el log, aun con `MODEL_VERSION=v9` |
+| Modelo que falla al predecir una entrada válida | 500 con el mensaje de la tabla de errores, sin traceback en la respuesta; el observador recibe `codigo_http=500` |
+| Copia de `v1` en una carpeta `v1-copia` | `/health` y `/predict` informan `v1-copia`, y el log avisa que `metadata.json` dice `v1` |
+
 ### Para el siguiente relevo
 
 **Qué quedó listo**
@@ -185,14 +197,19 @@ Con `v1`, la predicción debe ser 6.758120437797601.
 
 **Qué falta**
 
-- **Paso 2:** `POST /train`, pruebas con pytest y el cliente. `Settings.data_path` y `Settings.models_dir` ya están disponibles. `create_app` carga el modelo al crearse, así que `TestClient(create_app(Settings(...)))` funciona sin bloque `with`. Hay que decidir si `/train` cambia la versión que sirve `/predict`: hoy no hay recarga en caliente, por decisión del equipo.
+- **Paso 2:** `POST /train`, pruebas con pytest y el cliente.
+  - `Settings.data_path` y `Settings.models_dir` ya están disponibles, y también `request.app.state.settings`.
+  - Las pruebas importan `create_app` desde `api.main`, que no carga nada, nunca desde `api.app`. `create_app` carga el modelo al crearse, así que `TestClient(create_app(Settings(...)))` funciona sin bloque `with`.
+  - **`/train` debe ser un endpoint síncrono (`def`, no `async def`).** FastAPI corre los `def` en un hilo aparte; con `async def`, entrenar bloquearía el servidor y `/health` dejaría de responder mientras dura el entrenamiento.
+  - `/train` crea una versión nueva pero no cambia la que sirve la API (ver "Decisiones del equipo").
+  - **pytest debe filtrar la advertencia de httpx** (`StarletteDeprecationWarning` al importar `TestClient`), con `filterwarnings` en la configuración de pytest de `fase-3/`.
 - **Paso 3:** Docker y README. El README debe explicar cómo seleccionar la versión: cambiar `MODEL_VERSION` y reiniciar.
 
 **A tener en cuenta**
 
 - **Contexto de Docker en la raíz.** Con `docker build -f fase-3/Dockerfile .` desde la raíz, el contexto incluye `dataset/` (~940 MB), `.venv/`, `.git/`, el CSV y los `__pycache__`, y en la raíz no hay `.dockerignore`. Hay que crear `fase-3/Dockerfile.dockerignore`, que BuildKit usa en lugar del `.dockerignore` de la raíz, y que excluya al menos `dataset/`, `.venv/`, `.git/`, `**/__pycache__/`, `**/*.csv`, `fase-1/`, `fase-2/notebooks/`, `fase-2/tests/`, `fase-2/outputs/` y las credenciales. Los modelos se montan al ejecutar, como en la Fase 2. La imagen debe conservar `/app/fase-2/src` y `/app/fase-3/api`.
 - **`origin/main` lleva 2 merges que no están en `develop`:** `77c5b26` (PR #9) y `06edb5c` (PR #13, de `develop` a `main`). No cambian el contenido; los commits de merge son los que faltan. El PR final de `develop` a `main` debe tenerlo en cuenta.
-- **Aviso de starlette:** al importar `TestClient` aparece `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead`. Con `httpx==0.28.1` funciona. Si molesta en pytest, se puede filtrar el aviso; cambiar de cliente sería una decisión del equipo.
+- **Aviso de starlette:** al importar `TestClient` aparece `StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2 instead`. Con `httpx==0.28.1` funciona; el Paso 2 lo filtra en pytest. Cambiar de cliente sería una decisión del equipo.
 - Los mensajes de error usan rutas relativas a la raíz, para no exponer rutas del equipo donde corre la API.
 
 ## Paso 2 – /train, pruebas y cliente
@@ -205,4 +222,6 @@ Pendiente.
 
 ## Decisiones del equipo
 
-Pendiente.
+### /train no cambia la versión que sirve la API
+
+Decidido en la revisión del PR #14. `POST /train` crea una versión nueva en `MODELS_DIR`, pero no cambia la que sirve `/predict`: la API sigue con la versión que cargó al iniciar. Para usar la versión nueva hay que cambiar `MODEL_VERSION` y reiniciar el servidor. Es coherente con la decisión del Paso 1 de cargar el modelo al iniciar, sin recarga en caliente.

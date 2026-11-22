@@ -1,6 +1,8 @@
 """API REST de la Fase 3: GET /health y POST /predict.
 
-Ejecutar desde fase-3/:  uvicorn api.main:app
+Este modulo solo define create_app: importarlo no crea la app ni carga el
+modelo. El objeto app para uvicorn esta en api/app.py.
+Ejecutar desde fase-3/:  uvicorn api.app:app
 La logica de prediccion es la de fase-2/src (versioning y predicting): aqui solo
 se valida el JSON, se arma la respuesta y se avisa al observador.
 """
@@ -115,7 +117,14 @@ def load_model_state(settings: Settings) -> ModelState:
         state.model = model
         state.contract = contract
         state.input_model = input_model
-        state.version = metadata.get("version", settings.model_version)
+        # La version informada es siempre la configurada (el nombre de la carpeta)
+        if metadata.get("version") != settings.model_version:
+            logger.warning(
+                "metadata.json de %s dice version %r; se informa la configurada, %r",
+                _display(settings.model_path),
+                metadata.get("version"),
+                settings.model_version,
+            )
     if state.error:
         logger.error(state.error)
     return state
@@ -167,9 +176,7 @@ def create_app(settings: Settings | None = None, observer: Observer | None = Non
             "detalle": state.error,
         }
 
-    def _predict_sync(record: BaseModel) -> float:
-        raw = schema.to_raw_frame(record, state.contract)
-        features = predicting.prepare_input(raw, state.contract)
+    def _predict_sync(features) -> float:
         return float(predicting.predict_rows(state.model, features)[0])
 
     async def _handle(request: Request) -> tuple[int, dict, float | None]:
@@ -204,10 +211,25 @@ def create_app(settings: Settings | None = None, observer: Observer | None = Non
             logger.warning("Se ignoran campos que no usa el modelo: %s", ", ".join(extra))
 
         try:
-            prediction = await run_in_threadpool(_predict_sync, record)
-        except (predicting.PredictionError, DataError) as error:
             # Segunda capa: las reglas de fase-2 para la misma entrada
+            raw = schema.to_raw_frame(record, state.contract)
+            features = predicting.prepare_input(raw, state.contract)
+        except (predicting.PredictionError, DataError) as error:
             return 422, {"error": "Entrada invalida", "detalle": str(error)}, None
+
+        try:
+            prediction = await run_in_threadpool(_predict_sync, features)
+        except Exception:
+            # La entrada ya es valida: si el modelo falla, es un error del servidor
+            logger.exception("El modelo %s fallo al predecir una entrada valida", state.version)
+            return 500, {
+                "error": "Error interno al predecir",
+                "version": state.version,
+                "detalle": (
+                    f"El modelo de la version {state.version} no pudo predecir con una "
+                    "entrada valida. El detalle quedo en el log del servidor."
+                ),
+            }, None
         return 200, {"prediccion": prediction, "version": state.version}, prediction
 
     @app.post("/predict", openapi_extra=_openapi_body(state.contract))
@@ -229,6 +251,3 @@ def create_app(settings: Settings | None = None, observer: Observer | None = Non
         return JSONResponse(status_code=status, content=content)
 
     return app
-
-
-app = create_app()
