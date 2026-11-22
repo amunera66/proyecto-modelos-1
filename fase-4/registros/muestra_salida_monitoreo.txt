@@ -1,0 +1,12 @@
+Registro: fase-4/registros/muestra_predicciones.csv
+Total de solicitudes: 3
+Solicitudes fallidas (4xx o 5xx): 1
+Porcentaje de fallos: 33,3 %
+
+Por codigo HTTP:
+  200: 2
+  422: 1 (fallida)
+
+Por version:
+  (sin version): 1
+  v1: 2
