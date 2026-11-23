@@ -1,0 +1,15 @@
+# Dependencias del registro de la Fase 4, para Python 3.12.10.
+# Son las mismas de fase-3/requirements.txt, sin dependencias nuevas.
+pandas==3.0.6
+numpy==2.5.3
+scikit-learn==1.9.1
+joblib==1.6.0
+scipy==1.18.1
+pytest==9.1.1
+# API
+fastapi==0.165.0
+starlette==1.10.0
+pydantic==2.14.4
+uvicorn==0.54.0
+# Cliente de pruebas (TestClient de FastAPI)
+httpx==0.28.1

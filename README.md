@@ -41,6 +41,8 @@ proyecto-modelos-1/
   data/                  CSV del dataset (no versionado)
   fase-1/                Fase 1: notebook, modelo guardado y README de la fase
   fase-2/                Fase 2: scripts, versiones del modelo, pruebas y Docker
+  fase-3/                Fase 3: API REST (/health, /predict, /train), pruebas, cliente y Docker
+  fase-4/                Fase 4: registro de predicciones, script de monitoreo, pruebas y Docker
   requirements.txt       Dependencias del proyecto
   requirements.lock.txt  Versiones exactas probadas por el equipo
   verificar_entorno.py   Comprueba que el entorno quedó bien instalado
@@ -80,11 +82,15 @@ El modelo seleccionado es un Pipeline de scikit-learn con HistGradientBoostingRe
 
 La [Fase 2](fase-2/README.md) convierte el modelo en una aplicación con `train.py`, `predict.py`, versiones guardadas, pruebas con pytest y Docker. Sus instrucciones, métricas y limitaciones están en su README.
 
+## Resultados de las fases 3 y 4
+
+La [Fase 3](fase-3/README.md) expone el modelo en una API con FastAPI: `/health`, `/predict` y `/train`, con pruebas, un cliente de prueba y Docker. La [Fase 4](fase-4/README.md) registra cada predicción en un CSV, mide la tasa de fallos con `monitoreo.py` y documenta el reporte del ensayo, las versiones `v1` y `v2` y la política de reentrenamiento.
+
 ## Fases
 
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Modelo predictivo ([`fase-1/`](fase-1/README.md)) | Completa |
 | 2 | Scripts y Docker ([`fase-2/`](fase-2/README.md)) | Completa |
-| 3 | API REST | Pendiente |
-| 4 | Monitoreo básico | Pendiente |
+| 3 | API REST ([`fase-3/`](fase-3/README.md)) | Completa |
+| 4 | Registro de predicciones y monitoreo básico ([`fase-4/`](fase-4/README.md)) | Completa |
