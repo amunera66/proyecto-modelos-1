@@ -29,6 +29,20 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
+Si PowerShell bloquea la activación del entorno, llama directamente a su Python, también en los demás comandos de esta guía:
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m pytest
+```
+
+O permite los scripts solo en esa ventana y vuelve a activar el entorno:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
+```
+
 Bash:
 
 ```bash
@@ -89,9 +103,6 @@ docker run -d --name api-fase3 `
   -v "${PWD}/fase-2/data:/app/fase-2/data:ro" `
   -v "${PWD}/fase-2/models:/app/fase-2/models" `
   modelos-fase3:1.0
-
-# Detener y eliminar el contenedor
-docker rm -f api-fase3
 ```
 
 Bash, desde la raíz (`MSYS_NO_PATHCONV=1` es necesario en Git Bash; sin esa variable, `/app/...` se convierte en una ruta de Windows):
@@ -106,8 +117,13 @@ docker run -d --name api-fase3 \
   -v "$(pwd)/fase-2/data:/app/fase-2/data:ro" \
   -v "$(pwd)/fase-2/models:/app/fase-2/models" \
   modelos-fase3:1.0
+```
 
-# Detener y eliminar el contenedor
+### Detener y eliminar el contenedor
+
+Al terminar de probar. El comando es igual en PowerShell y en Bash. Las versiones que creó `/train` quedan en `fase-2/models`.
+
+```text
 docker rm -f api-fase3
 ```
 
@@ -230,21 +246,28 @@ MODEL_VERSION=v2 python -m uvicorn api.app:app --port 8000
 python -m uvicorn api.app:app --port 8000
 ```
 
-En Docker se reemplaza el contenedor con `-e MODEL_VERSION=v2`. Para volver a `v1`, se repite sin esa variable. PowerShell:
+En Docker se reemplaza el contenedor con `-e MODEL_VERSION=v2`. Para volver a `v1`, se repite sin esa variable. PowerShell, desde la raíz:
 
 ```powershell
 docker rm -f api-fase3
-docker run -d --name api-fase3 -p 8000:8000 -e "MODEL_VERSION=v2" `
+$commit = git rev-parse HEAD
+docker run -d --name api-fase3 `
+  -p 8000:8000 `
+  -e "GIT_COMMIT=$commit" `
+  -e "MODEL_VERSION=v2" `
   -v "${PWD}/fase-2/data:/app/fase-2/data:ro" `
   -v "${PWD}/fase-2/models:/app/fase-2/models" `
   modelos-fase3:1.0
 ```
 
-Bash:
+Bash, desde la raíz (con `export MSYS_NO_PATHCONV=1` en Git Bash):
 
 ```bash
 docker rm -f api-fase3
-docker run -d --name api-fase3 -p 8000:8000 -e MODEL_VERSION=v2 \
+docker run -d --name api-fase3 \
+  -p 8000:8000 \
+  -e GIT_COMMIT="$(git rev-parse HEAD)" \
+  -e MODEL_VERSION=v2 \
   -v "$(pwd)/fase-2/data:/app/fase-2/data:ro" \
   -v "$(pwd)/fase-2/models:/app/fase-2/models" \
   modelos-fase3:1.0
@@ -298,7 +321,7 @@ El equipo usó Claude (Anthropic), mediante Claude Code, como asistente para gen
 
 Miguel Ángel Altamiranda quedó eximido de esta entrega con el aval del profesor, y Alejandro asumió sus pasos.
 
-Los datos salen de los merge commits y de GitHub.
+Los datos salen de los merge commits y de GitHub. En GitHub, Juan Esteban González Duque es `Juanesgodu` (confirmado por el equipo) y Alejandro Múnera Ramírez es `amunera66`.
 
 | Paso | Contenido | Hizo | PR | Aprobado y integrado por |
 |---|---|---|---|---|

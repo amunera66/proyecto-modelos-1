@@ -432,6 +432,16 @@ Windows 11 ARM64, Docker Desktop 4.98.0 (Docker 29.9.2, motor `linux/arm64`). Co
 
 También se comprobó en local `python -m uvicorn api.app:app --port 8000` con el cliente: misma respuesta que en Docker.
 
+**Tras la revisión del PR #18.** En el README:
+- `docker rm -f api-fase3` pasó a un bloque aparte, "Detener y eliminar el contenedor", para que copiar el bloque principal no elimine el contenedor recién creado.
+- Se agregó la alternativa para cuando PowerShell bloquea `Activate.ps1`.
+- Los comandos de Docker con `MODEL_VERSION=v2` ahora pasan `GIT_COMMIT`.
+- Se dejó constancia de que `Juanesgodu` es Juan Esteban.
+
+Los bloques corregidos se ejecutaron tal como están escritos:
+- El bloque principal y el de limpieza en PowerShell: `/health` 200 con `v1`, y después no quedó ningún contenedor.
+- Los de `v2` en PowerShell y en Git Bash: `/health` informó `v2`, y el contenedor recibió `GIT_COMMIT` y `MODEL_VERSION`.
+
 ### Para el siguiente relevo
 
 **Qué quedó listo**
