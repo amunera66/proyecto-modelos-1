@@ -92,6 +92,7 @@ La imagen `modelos-fase4:1.0` usa `python:3.12.10-slim` y solo trae el código (
   | `fase-4/registros` | `/app/fase-4/registros` | Escritura | **Registro persistente**, `fase-4/registros/predicciones.csv` |
 
   Si no se monta `fase-4/registros`, el registro queda dentro del contenedor y se pierde al eliminarlo.
+- **Registro en otro archivo:** agrega `-e LOG_PATH=...` al `docker run`, con una ruta relativa a la raíz dentro de `fase-4/registros/`, para que quede en el montaje. Por ejemplo, en PowerShell `` -e "LOG_PATH=fase-4/registros/prueba.csv" ` `` y en Bash `-e LOG_PATH=fase-4/registros/prueba.csv \`. Para leerlo: `docker exec api-fase4 python monitoreo.py --registro registros/prueba.csv`. Git solo ignora `predicciones.csv`: borra el archivo de prueba al terminar.
 - **Puerto:** uvicorn escucha en `0.0.0.0:8000`, con un solo worker, y se publica con `-p 8000:8000`.
 
 **Dónde se verificó:** Windows 11 ARM64, Docker Desktop (Docker 29.9.2, motor `linux/arm64`), en Windows PowerShell 5.1 y en Git Bash (GNU bash 5.3), desde una copia nueva del repositorio. Los dos bloques corrieron completos.
@@ -263,7 +264,38 @@ MODEL_VERSION=v2 python -m uvicorn registro.app:app --port 8000
 python -m uvicorn registro.app:app --port 8000
 ```
 
-En Docker se elimina el contenedor (`docker rm -f api-fase4`) y se vuelve a crear con el comando de arriba, cambiando `MODEL_VERSION=v1` por `MODEL_VERSION=v2`; para volver, se repite con `v1`. En la verificación en Docker, con `v2`, `/health` informó `"version":"v2"`.
+En Docker se elimina el contenedor y se vuelve a crear con `MODEL_VERSION=v2`. Para volver a `v1`, se repite con `MODEL_VERSION=v1`.
+
+PowerShell, desde la raíz:
+
+```powershell
+docker rm -f api-fase4
+$commit = git rev-parse HEAD
+docker run -d --name api-fase4 `
+  -p 8000:8000 `
+  -e "GIT_COMMIT=$commit" `
+  -e "MODEL_VERSION=v2" `
+  -v "${PWD}/fase-2/data:/app/fase-2/data:ro" `
+  -v "${PWD}/fase-2/models:/app/fase-2/models" `
+  -v "${PWD}/fase-4/registros:/app/fase-4/registros" `
+  modelos-fase4:1.0
+```
+
+Bash, desde la raíz (con `export MSYS_NO_PATHCONV=1` en Git Bash):
+
+```bash
+docker rm -f api-fase4
+docker run -d --name api-fase4 \
+  -p 8000:8000 \
+  -e GIT_COMMIT="$(git rev-parse HEAD)" \
+  -e MODEL_VERSION=v2 \
+  -v "$(pwd)/fase-2/data:/app/fase-2/data:ro" \
+  -v "$(pwd)/fase-2/models:/app/fase-2/models" \
+  -v "$(pwd)/fase-4/registros:/app/fase-4/registros" \
+  modelos-fase4:1.0
+```
+
+Con `v2`, `/health` informa `"version":"v2"` y Toy Story 2 da 6.473487560963072 (con `v1`, 6.2250117576267305).
 
 **`/train` crea versiones nuevas sin activarlas.** Guarda `v3`, `v4`, ... en `fase-2/models` y la API sigue con la versión activa hasta que se cambie `MODEL_VERSION` y se reinicie. Esas carpetas no se suben al repositorio.
 
@@ -316,6 +348,6 @@ Los datos salen de los merge commits y de GitHub. En GitHub, Alejandro Múnera R
 | 3 · 2 | `/train`, pruebas con pytest y cliente | Juan Esteban | #16 | Alejandro |
 | 4 · 4 | Script de monitoreo y ensayo | Juan Esteban | #17 | Alejandro |
 | 3 · 3 | Docker y README de fase-3 | Alejandro | #18 | Pendiente; revisor designado: Juan Esteban |
-| 4 · 6 | Docker y README de fase-4 | Alejandro | Este PR | Pendiente; revisor designado: Juan Esteban |
+| 4 · 6 | Docker y README de fase-4 | Alejandro | #19 | Revisor: Juan Esteban (`Juanesgodu`) |
 
 Desde el PR #14, cada PR tiene una aprobación formal en GitHub (*Approve*) antes del merge, de un integrante distinto de quien lo abrió. En la Fase 2 algunas aprobaciones fueron comentarios publicados después del merge.
