@@ -1,0 +1,29 @@
+# Contexto de construccion de fase-4/Dockerfile. El contexto es la raiz del
+# repositorio, y BuildKit usa este archivo en lugar de un .dockerignore de la raiz.
+#
+# Se excluye todo y se vuelve a incluir solo lo que copia el Dockerfile. Asi no
+# llegan dataset/ (~940 MB), .venv/, .git/, fase-1/, los CSV de datos,
+# fase-2/models/, fase-4/registros/ (ni el registro vivo ni las muestras),
+# las pruebas, el cliente, los parches ni las credenciales.
+*
+
+# Lo unico que necesita la imagen
+!fase-2/src/
+!fase-3/api/
+!fase-4/registro/
+!fase-4/monitoreo.py
+!fase-4/requirements.txt
+
+# Dentro de lo incluido: caches, datos, modelos, registros y credenciales nunca entran
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/*.csv
+**/*.zip
+**/*.joblib
+**/*.pkl
+**/.env
+**/.env.*
+**/kaggle.json
+**/*.pem
+**/*.key
