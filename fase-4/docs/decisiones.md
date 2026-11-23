@@ -378,11 +378,11 @@ Windows 11 ARM64, Docker 29.9.2 (motor `linux/arm64`). Contenedor con `-p 8000:8
 - **Reporte:** usa el ensayo de Juan Esteban del Paso 4, porque sus resultados están versionados como muestra; el ensayo en Docker de este paso confirma que da lo mismo, pero su registro se borró.
 - **Versiones:** `v1` activa y `v2` alternativa. `metadata.json` muestra que `v2` se guardó 9 s después de `v1`, así que se describe como alternativa y no como anterior; según fase-2, solo cambia la semilla (42 y 7).
 - **Política de reentrenamiento:** el texto acordado por el equipo, con ajustes mínimos de redacción.
-- **Dependencia:** el README enlaza el README de fase-3, que llega con el PR #18.
+- **Dependencia:** el README enlaza el README de fase-3, que se agrega en el PR #18.
 
 ### Para el siguiente relevo
 
-- Integrar el PR #18 (Docker y README de fase-3) antes o junto con este, para que los enlaces a `fase-3/README.md` funcionen en `develop`.
+- Los enlaces a `fase-3/README.md` necesitan el PR #18 (Docker y README de fase-3) en `develop`; conviene integrarlo antes que este.
 - Luego, el PR de `develop` a `main` con la entrega.
 
 ## Decisiones del equipo

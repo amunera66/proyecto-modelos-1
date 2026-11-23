@@ -341,13 +341,13 @@ Miguel Ángel Altamiranda quedó eximido de esta entrega con el aval del profeso
 
 Los datos salen de los merge commits y de GitHub. En GitHub, Alejandro Múnera Ramírez es `amunera66` y Juan Esteban González Duque es `Juanesgodu`.
 
-| Fase · Paso | Contenido | Hizo | PR | Aprobado e integrado por |
+| Fase · Paso | Contenido | Hizo | PR | Revisor |
 |---|---|---|---|---|
 | 3 · 1 | API base: `/health` y `/predict` | Alejandro | #14 | Juan Esteban |
 | 4 · 2 | Registro de predicciones en CSV | Alejandro | #15 | Juan Esteban |
 | 3 · 2 | `/train`, pruebas con pytest y cliente | Juan Esteban | #16 | Alejandro |
 | 4 · 4 | Script de monitoreo y ensayo | Juan Esteban | #17 | Alejandro |
-| 3 · 3 | Docker y README de fase-3 | Alejandro | #18 | Pendiente; revisor designado: Juan Esteban |
-| 4 · 6 | Docker y README de fase-4 | Alejandro | #19 | Revisor: Juan Esteban (`Juanesgodu`) |
+| 3 · 3 | Docker y README de fase-3 | Alejandro (`amunera66`) | #18 | Juan Esteban (`Juanesgodu`) |
+| 4 · 6 | Docker y README de fase-4 | Alejandro (`amunera66`) | #19 | Juan Esteban (`Juanesgodu`) |
 
-Desde el PR #14, cada PR tiene una aprobación formal en GitHub (*Approve*) antes del merge, de un integrante distinto de quien lo abrió. En la Fase 2 algunas aprobaciones fueron comentarios publicados después del merge.
+En los PR #14 a #17, el revisor dio la aprobación formal en GitHub (*Approve*) antes del merge e integró el PR; nunca fue quien lo abrió. En la Fase 2 algunas aprobaciones fueron comentarios publicados después del merge.
