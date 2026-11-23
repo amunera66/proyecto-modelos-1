@@ -338,7 +338,52 @@ Para quien haga Docker y el README de fase-4 (Paso 6).
 
 ## Paso 6 – Docker y README
 
-Pendiente.
+Agrega `Dockerfile`, `Dockerfile.dockerignore` y `README.md` de fase-4, y actualiza el README de la raíz. No modifica `fase-1/`, `fase-2/`, `fase-3/`, `registro/`, `monitoreo.py`, `tests/` ni las muestras del Paso 4.
+
+### Docker
+
+| Decisión | Motivo |
+|---|---|
+| Mismo patrón de `fase-3/Dockerfile`: `python:3.12.10-slim`, contexto en la raíz y `Dockerfile.dockerignore` que excluye todo y vuelve a incluir lo necesario | Los imports se calculan con rutas relativas (`registro/_fase3.py` y `api/_fase2.py`), así que la imagen conserva la estructura `/app/fase-2/src`, `/app/fase-3/api` y `/app/fase-4/registro` |
+| Se instala `fase-4/requirements.txt` | Tiene las mismas versiones exactas de fase-3 |
+| Se copia `monitoreo.py` | Permite correr el script dentro del contenedor con `docker exec` |
+| `CMD uvicorn registro.app:app --host 0.0.0.0 --port 8000` desde `/app/fase-4`, un solo worker | El lock del registro vale dentro de un proceso |
+| Sin `LOG_PATH` en la imagen | El valor por defecto, `fase-4/registros/predicciones.csv`, cae en el montaje `/app/fase-4/registros` |
+| `fase-4/registros/` no entra en la imagen | Ni el registro vivo ni las muestras: el registro se monta |
+
+Imagen `modelos-fase4:1.0`: 746 MB en disco, 159 MB comprimida. `/app` tiene 23 archivos: 9 de `fase-2/src`, 7 de `fase-3/api`, 5 de `fase-4/registro`, `monitoreo.py` y `requirements.txt`. Sin datos, modelos, registros, `__pycache__` ni git.
+
+### Verificación en Docker
+
+Windows 11 ARM64, Docker 29.9.2 (motor `linux/arm64`). Contenedor con `-p 8000:8000`, `GIT_COMMIT`, `MODEL_VERSION=v1`, `fase-2/data` en solo lectura y `fase-2/models` y `fase-4/registros` con escritura. Se hizo en Windows PowerShell 5.1 sobre el repositorio y en Git Bash (GNU bash 5.3) sobre una copia nueva (`git clone` de esta rama), sin `predicciones.csv` previo.
+
+| Paso | Resultado (igual en las dos terminales) |
+|---|---|
+| `/health` | `{"estado":"en_ejecucion","version":"v1","modelo_disponible":true,"detalle":null}` |
+| Toy Story 2 | 200, `{"prediccion":6.2250117576267305,"version":"v1"}` |
+| The Matrix | 200, `{"prediccion":6.454525153977101,"version":"v1"}` |
+| The Matrix sin `runtime` | 422, `{"error":"Entrada invalida","detalle":[{"campo":"runtime","mensaje":"Campo obligatorio ausente; si el dato falta, envia null"}]}` |
+| Registro en el equipo | 3 filas: 200 y 200 con `v1` y las mismas predicciones, y 422 sin versión ni predicción. Siguió igual después de `docker rm -f` |
+| `docker exec api-fase4 python monitoreo.py` | 3 solicitudes, 1 fallida, `33,3 %`. Igual con `--registro registros/predicciones.csv` y con un `docker run --rm` aparte sobre el montaje |
+| `python monitoreo.py` en local | La misma salida. Comparada con `muestra_salida_monitoreo.txt`, solo cambia la línea `Registro:`; las filas solo cambian en `fecha_hora` |
+| `MODEL_VERSION=v2` | `/health` informa `"version":"v2"` |
+| `POST /train` con `v2` activa | 201 en 12 s, `v3` apareció en `fase-2/models` del equipo con sus tres archivos; el registro no cambió. `docker logs` no mostró `Entrenando la version ...`, que es un INFO del logger `api`: solo los mensajes de uvicorn |
+| `python -m pytest` | `27 passed` en el entorno del equipo, y en un entorno nuevo creado en la copia (`pip check` sin conflictos) |
+| Limpieza | Se borraron `fase-2/models/v3` y los `predicciones.csv` de prueba. `git status` sin cambios en `fase-2/` |
+
+**Git Bash y `/tmp`:** el primer intento con la copia nueva se hizo en la carpeta temporal de Windows, que Git Bash muestra como `/tmp/...`. Con `MSYS_NO_PATHCONV=1`, Docker recibió `/tmp/...` tal cual, montó carpetas vacías de su máquina virtual y `/health` respondió `modelo_disponible: false` (las tres solicitudes dieron 503). Entrando a la misma carpeta por su ruta `/c/...` funcionó. Quedó anotado en el README.
+
+### README
+
+- **Reporte:** usa el ensayo de Juan Esteban del Paso 4, porque sus resultados están versionados como muestra; el ensayo en Docker de este paso confirma que da lo mismo, pero su registro se borró.
+- **Versiones:** `v1` activa y `v2` alternativa. `metadata.json` muestra que `v2` se guardó 9 s después de `v1`, así que se describe como alternativa y no como anterior; según fase-2, solo cambia la semilla (42 y 7).
+- **Política de reentrenamiento:** el texto acordado por el equipo, con ajustes mínimos de redacción.
+- **Dependencia:** el README enlaza el README de fase-3, que llega con el PR #18.
+
+### Para el siguiente relevo
+
+- Integrar el PR #18 (Docker y README de fase-3) antes o junto con este, para que los enlaces a `fase-3/README.md` funcionen en `develop`.
+- Luego, el PR de `develop` a `main` con la entrega.
 
 ## Decisiones del equipo
 
